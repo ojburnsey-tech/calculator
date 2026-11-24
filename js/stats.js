@@ -239,8 +239,103 @@ export const REG_TYPES = {
   log: { name: 'Logarithmic', form: 'y=a+b\\ln x' },
   exp: { name: 'Exponential', form: 'y=a\\mathrm{e}^{bx}' },
   abx: { name: 'ab^x', form: 'y=ab^{x}' },
-  pow: { name: 'Power', form: 'y=ax^{b}' }
+  pow: { name: 'Power', form: 'y=ax^{b}' },
+  sin: { name: 'Sinusoidal', form: 'y=a\\sin\\left(bx+c\\right)+d' },
+  logistic: { name: 'Logistic', form: 'y=\\frac{c}{1+a\\mathrm{e}^{-bx}}' }
 };
+
+function lm(f, p0, pts, iters = 200) {
+  let p = p0.slice();
+  let lambda = 1e-3;
+  const resid = q => pts.map(([x, y, w]) => Math.sqrt(w) * (y - f(x, q)));
+  const sse = r => r.reduce((s, v) => s + v * v, 0);
+  let r = resid(p), cur = sse(r);
+  if (!isFinite(cur)) return null;
+  for (let it = 0; it < iters; it++) {
+    const J = pts.map(([x, , w]) => p.map((pk, k) => {
+      const hk = 1e-6 * Math.max(1, Math.abs(pk));
+      const q = p.slice(); q[k] += hk;
+      return Math.sqrt(w) * (f(x, q) - f(x, p)) / hk;
+    }));
+    const n = p.length;
+    const A = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => J.reduce((s, row) => s + row[i] * row[j], 0)));
+    const g = Array.from({ length: n }, (_, i) => J.reduce((s, row, k) => s + row[i] * r[k], 0));
+    let improved = false;
+    for (let tries = 0; tries < 12; tries++) {
+      const Ad = A.map((row, i) => row.map((v, j) => i === j ? v * (1 + lambda) + 1e-12 : v));
+      let d;
+      try { d = window.math.lusolve(Ad, g).map(x => x[0]); } catch (e) { lambda *= 10; continue; }
+      const q = p.map((v, i) => v + d[i]);
+      const rq = resid(q), s2 = sse(rq);
+      if (isFinite(s2) && s2 < cur) {
+        const done = (cur - s2) < 1e-15 * Math.max(1, cur);
+        p = q; r = rq; cur = s2; lambda = Math.max(1e-12, lambda / 10); improved = true;
+        if (done) return { p, sse: cur };
+        break;
+      }
+      lambda *= 10;
+    }
+    if (!improved) break;
+  }
+  return { p, sse: cur };
+}
+
+function r2Of(pts, f) {
+  const n = pts.reduce((s, p) => s + p[2], 0);
+  const my = pts.reduce((s, p) => s + p[1] * p[2], 0) / n;
+  const sse = pts.reduce((s, [x, y, w]) => s + w * (y - f(x)) ** 2, 0);
+  const sst = pts.reduce((s, [, y, w]) => s + w * (y - my) ** 2, 0);
+  return sst ? 1 - sse / sst : NaN;
+}
+
+function fitSin(pts) {
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), span = maxX - minX || 1;
+  const d0 = ys.reduce((a, b) => a + b, 0) / ys.length;
+  const a0 = (Math.max(...ys) - Math.min(...ys)) / 2 || 1;
+  const f = (x, q) => q[0] * Math.sin(q[1] * x + q[2]) + q[3];
+  let best = null;
+  for (let k = 1; k <= 40; k++) {
+    const b0 = 2 * Math.PI * k / (2 * span);
+    let bestC = 0, bestE = Infinity;
+    for (let j = 0; j < 12; j++) {
+      const c = j * Math.PI / 6;
+      const e = pts.reduce((s, [x, y]) => s + (y - f(x, [a0, b0, c, d0])) ** 2, 0);
+      if (e < bestE) { bestE = e; bestC = c; }
+    }
+    const res = lm(f, [a0, b0, bestC, d0], pts);
+    if (res && (!best || res.sse < best.sse)) best = res;
+  }
+  if (!best) return null;
+  let [a, b, c, d] = best.p;
+  if (a < 0) { a = -a; c += Math.PI; }
+  if (b < 0) { b = -b; c = -c + Math.PI; }
+  c = ((c % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
+  const g = x => a * Math.sin(b * x + c) + d;
+  return { coef: { a, b, c, d }, r2: r2Of(pts, g), f: g };
+}
+
+function fitLogistic(pts) {
+  const ys = pts.map(p => p[1]);
+  if (ys.some(y => y <= 0)) return null;
+  const f = (x, q) => q[2] / (1 + q[0] * Math.exp(-q[1] * x));
+  let best = null;
+  for (const mult of [1.05, 1.2, 1.5, 2, 3]) {
+    const c0 = Math.max(...ys) * mult;
+    const lin = pts.map(([x, y, w]) => [x, Math.log(c0 / y - 1), w]).filter(p => isFinite(p[1]));
+    if (lin.length < 2) continue;
+    let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (const [x, y, w] of lin) { n += w; sx += w * x; sy += w * y; sxx += w * x * x; sxy += w * x * y; }
+    const slope = (sxy - sx * sy / n) / (sxx - sx * sx / n);
+    const icept = (sy - slope * sx) / n;
+    const res = lm(f, [Math.exp(icept), -slope, c0], pts, 400);
+    if (res && (!best || res.sse < best.sse)) best = res;
+  }
+  if (!best) return null;
+  const [a, b, c] = best.p;
+  const g = x => c / (1 + a * Math.exp(-b * x));
+  return { coef: { a, b, c }, r2: r2Of(pts, g), f: g };
+}
 
 export function regress(type, pts) {
   const fail = () => { throw new Error('Math ERROR'); };
@@ -276,6 +371,8 @@ export function regress(type, pts) {
     const b = Math.exp(L.slope);
     return { coef: { a, b }, r: L.r, r2: L.r * L.r, f: x => a * b ** x };
   }
+  if (type === 'sin') { if (pts.length < 4) fail(); const r = fitSin(pts); if (!r) fail(); return r; }
+  if (type === 'logistic') { if (pts.length < 3) fail(); const r = fitLogistic(pts); if (!r) fail(); return r; }
   if (type === 'pow') {
     if (pts.some(p => p[0] <= 0 || p[1] <= 0)) fail();
     const L = linFit(pts.map(([x, y, w]) => [Math.log(x), Math.log(y), w])); if (!L) fail();
@@ -283,4 +380,49 @@ export function regress(type, pts) {
     return { coef: { a, b: L.slope }, r: L.r, r2: L.r * L.r, f: x => a * x ** L.slope };
   }
   fail();
+}
+
+
+export function pFromZ(z, alt) {
+  if (alt === 'lt') return normCdf(z);
+  if (alt === 'gt') return 1 - normCdf(z);
+  return 2 * (1 - normCdf(Math.abs(z)));
+}
+export function pFromT(t, df, alt) {
+  if (alt === 'lt') return tCdf(t, df);
+  if (alt === 'gt') return 1 - tCdf(t, df);
+  return 2 * (1 - tCdf(Math.abs(t), df));
+}
+const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
+const sdev = a => { const m = mean(a); return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / (a.length - 1)); };
+export const summary = a => ({ mean: mean(a), sx: sdev(a), n: a.length });
+
+export function chiGOF(obs, exp, df) {
+  let chi = 0;
+  const contrib = obs.map((o, i) => { const c = (o - exp[i]) ** 2 / exp[i]; chi += c; return c; });
+  return { chi, p: 1 - chiCdf(chi, df), df, contrib };
+}
+
+export function chi2way(M) {
+  const R = M.length, C = M[0].length;
+  const rs = M.map(r => r.reduce((a, b) => a + b, 0));
+  const cs = M[0].map((_, j) => M.reduce((a, r) => a + r[j], 0));
+  const N = rs.reduce((a, b) => a + b, 0);
+  const E = M.map((r, i) => r.map((_, j) => rs[i] * cs[j] / N));
+  let chi = 0;
+  for (let i = 0; i < R; i++) for (let j = 0; j < C; j++) chi += (M[i][j] - E[i][j]) ** 2 / E[i][j];
+  const df = (R - 1) * (C - 1);
+  return { chi, p: 1 - chiCdf(chi, df), df, E };
+}
+
+export function anova(groups) {
+  const all = groups.flat();
+  const N = all.length, k = groups.length;
+  const gm = mean(all);
+  const ssb = groups.reduce((s, g) => s + g.length * (mean(g) - gm) ** 2, 0);
+  const ssw = groups.reduce((s, g) => { const m = mean(g); return s + g.reduce((t, v) => t + (v - m) ** 2, 0); }, 0);
+  const dfb = k - 1, dfw = N - k;
+  const msb = ssb / dfb, msw = ssw / dfw;
+  const F = msb / msw;
+  return { F, p: 1 - fCdf(F, dfb, dfw), dfb, dfw, ssb, ssw, msb, msw };
 }

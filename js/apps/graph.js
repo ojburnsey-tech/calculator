@@ -43,6 +43,7 @@ export const graphApp = {
   },
   unmount() {
     this.ctx.save();
+    if (this.dynTimer) this.dynTimer();
     if (this.ro) { this.ro.disconnect(); this.ro = null; }
   },
   fns() {
@@ -51,12 +52,51 @@ export const graphApp = {
     store.graph.forEach((g, i) => {
       if (!g || !g.on || !g.latex || !g.latex.trim()) return;
       try {
+        if (g.type && g.type !== 'y') return;
         const ast = parse.parseLatex(g.latex);
         if (ast.k === 'eq') return;
         out.push({ i, f: this.ctx.engine.fnOf(ast, 'x') });
       } catch (e) {}
     });
     return out;
+  },
+  curves() {
+    const { store, parse, engine } = this.ctx;
+    const out = [];
+    store.graph.forEach((g, i) => {
+      if (!g || !g.on || !g.latex || !g.latex.trim()) return;
+      const type = g.type || 'y';
+      try {
+        const ast = parse.parseLatex(g.latex);
+        if (ast.k === 'eq') return;
+        if (type === 'param') {
+          if (!g.latex2 || !g.latex2.trim()) return;
+          const ast2 = parse.parseLatex(g.latex2);
+          out.push({ i, type, fx: engine.fnOf(ast, 't'), fy: engine.fnOf(ast2, 't') });
+        } else if (type === 'r') out.push({ i, type, f: engine.fnOf(ast, 'θ') });
+        else if (type === 'x') out.push({ i, type, f: engine.fnOf(ast, 'y') });
+        else out.push({ i, type, f: engine.fnOf(ast, 'x') });
+      } catch (e) {}
+    });
+    return out;
+  },
+  tRange() {
+    const w = this.ctx.store.window;
+    const full = { deg: 360, rad: 2 * Math.PI, gra: 400 }[this.ctx.store.settings.angle];
+    const tmin = Number.isFinite(w.tmin) ? w.tmin : 0, tmax = Number.isFinite(w.tmax) ? w.tmax : full;
+    return [tmin, tmax];
+  },
+  pickType(i, rebuild) {
+    const { h, store } = this.ctx;
+    const g = store.graph[i];
+    const types = [['y', 'y = f(x)'], ['r', 'r = f(θ) polar'], ['param', 'Parametric x(t), y(t)'], ['x', 'x = f(y)'], ['y>', 'y > f(x)'], ['y<', 'y < f(x)'], ['y≥', 'y ≥ f(x)'], ['y≤', 'y ≤ f(x)']];
+    const body = h('div', { class: 'formats' });
+    for (const [k, label] of types) {
+      const b = h('button', { type: 'button', class: 'fmt-row' + ((g.type || 'y') === k ? ' on' : '') }, h('span', { class: 'fmt-label' }, label));
+      b.addEventListener('click', () => { g.type = k; this.ctx.save(); this.ctx.closeSheet(); rebuild(); });
+      body.append(b);
+    }
+    this.ctx.openSheet('Graph type for row ' + (i + 1), body, { tall: true });
   },
   showEdit() {
     const { h, tex, store } = this.ctx;
@@ -74,9 +114,19 @@ export const graphApp = {
     store.graph.forEach((g, i) => {
       const sw = h('button', { type: 'button', class: 'swatch' + (g.on ? ' on' : ''), style: `--c:${color(i)}`, 'aria-label': (g.on ? 'Hide' : 'Show') + ' y' + (i + 1), 'aria-pressed': g.on ? 'true' : 'false' });
       sw.addEventListener('click', () => { g.on = !g.on; sw.classList.toggle('on', g.on); sw.setAttribute('aria-pressed', g.on ? 'true' : 'false'); this.ctx.save(); });
+      const type = g.type || 'y';
+      const n = '_{' + (i + 1) + '}';
+      const labels = { y: 'y' + n + '=', r: 'r' + n + '=', x: 'x' + n + '=', param: 'Xt' + n + '=', 'y>': 'y' + n + '>', 'y<': 'y' + n + '<', 'y≥': 'y' + n + '\\ge', 'y≤': 'y' + n + '\\le' };
+      const lab = h('button', { type: 'button', class: 'flabel ftype', html: tex(labels[type]), 'aria-label': 'Change graph type for row ' + (i + 1) });
+      lab.addEventListener('click', () => this.pickType(i, () => this.showEdit()));
       const mf = this.ctx.makeField(g.latex, { class: 'fcell', onInput: v => { g.latex = v; this.ctx.save(); } });
       this.cells.push(mf);
-      list.append(h('div', { class: 'frow-g' }, sw, h('span', { class: 'flabel', html: tex('y_{' + (i + 1) + '}=') }), mf));
+      list.append(h('div', { class: 'frow-g' }, sw, lab, mf));
+      if (type === 'param') {
+        const mf2 = this.ctx.makeField(g.latex2 || '', { class: 'fcell', onInput: v => { g.latex2 = v; this.ctx.save(); } });
+        this.cells.push(mf2);
+        list.append(h('div', { class: 'frow-g sub' }, h('span'), h('span', { class: 'flabel', html: tex('Yt' + n + '=') }), mf2));
+      }
     });
     this.el.append(h('div', { class: 'gedit' }, tools, list));
     const first = store.graph.findIndex(g => !g.latex);
@@ -105,30 +155,32 @@ export const graphApp = {
   openWindow() {
     const { h, store, tex } = this.ctx;
     const w = store.window;
-    const keys = [['xmin', 'X_{\\min}'], ['xmax', 'X_{\\max}'], ['xscl', 'X_{\\text{scale}}'], ['ymin', 'Y_{\\min}'], ['ymax', 'Y_{\\max}'], ['yscl', 'Y_{\\text{scale}}']];
+    const [t0, t1] = this.tRange();
+    const keys = [['xmin', 'X_{\\min}'], ['xmax', 'X_{\\max}'], ['xscl', 'X_{\\text{scale}}'], ['ymin', 'Y_{\\min}'], ['ymax', 'Y_{\\max}'], ['yscl', 'Y_{\\text{scale}}'], ['tmin', 'T\\theta_{\\min}'], ['tmax', 'T\\theta_{\\max}']];
     const inputs = {};
     const body = h('div', { class: 'settings' });
     const grid = h('div', { class: 'vwin' });
+    const cur = { ...w, tmin: t0, tmax: t1 };
     for (const [k, label] of keys) {
-      const inp = h('input', { type: 'text', inputmode: 'decimal', value: String(w[k]), class: 'num-in', 'aria-label': k });
-      inputs[k] = inp;
-      grid.append(h('label', { class: 'vrow' }, h('span', { html: tex(label) }), inp));
+      const f = this.ctx.numField(String(Number(Number(cur[k]).toPrecision(10))), { label: k });
+      inputs[k] = f;
+      grid.append(h('label', { class: 'vrow' }, h('span', { html: tex(label) }), f.el));
     }
     const err = h('div', { class: 'err' });
+    const fill = v => { for (const k in v) inputs[k].set(String(Number(v[k].toPrecision(10)))); };
     const presets = h('div', { class: 'toolbar' },
       h('button', { type: 'button', onclick: () => fill({ xmin: -10, xmax: 10, xscl: 1, ymin: -7, ymax: 7, yscl: 1 }) }, 'Standard'),
-      h('button', { type: 'button', onclick: () => fill({ xmin: -360, xmax: 360, xscl: 90, ymin: -1.6, ymax: 1.6, yscl: 0.5 }) }, 'Trig (Deg)'),
-      h('button', { type: 'button', onclick: () => fill({ xmin: -2 * Math.PI, xmax: 2 * Math.PI, xscl: Math.PI / 2, ymin: -1.6, ymax: 1.6, yscl: 0.5 }) }, 'Trig (Rad)'));
-    const fill = v => { for (const k in v) inputs[k].value = String(Number(v[k].toPrecision(10))); };
+      h('button', { type: 'button', onclick: () => fill({ xmin: -360, xmax: 360, xscl: 90, ymin: -1.6, ymax: 1.6, yscl: 0.5, tmin: 0, tmax: 360 }) }, 'Trig (Deg)'),
+      h('button', { type: 'button', onclick: () => fill({ xmin: -2 * Math.PI, xmax: 2 * Math.PI, xscl: Math.PI / 2, ymin: -1.6, ymax: 1.6, yscl: 0.5, tmin: 0, tmax: 2 * Math.PI }) }, 'Trig (Rad)'),
+      h('button', { type: 'button', onclick: () => { const v = this.canvas ? this.view() : null; const W = v ? v.W : 360, H = v ? v.H : 500; const u = 20 / W; fill({ xmin: -10, xmax: 10, ymin: -u * H / 2, ymax: u * H / 2 }); } }, 'Square'));
     body.append(presets, grid, err, h('button', { type: 'button', class: 'primary wide', onclick: () => {
       const nv = {};
       for (const [k] of keys) {
-        const raw = inputs[k].value.replace('−', '-').replace('π', String(Math.PI));
-        const v = Number(raw);
+        const v = inputs[k].get();
         if (!isFinite(v)) { err.textContent = 'Check ' + k; return; }
         nv[k] = v;
       }
-      if (nv.xmin >= nv.xmax || nv.ymin >= nv.ymax || nv.xscl < 0 || nv.yscl < 0) { err.textContent = 'Min must be less than max'; return; }
+      if (nv.xmin >= nv.xmax || nv.ymin >= nv.ymax || nv.xscl < 0 || nv.yscl < 0 || nv.tmin >= nv.tmax) { err.textContent = 'Each min must be less than its max'; return; }
       Object.assign(w, nv);
       this.ctx.save();
       this.ctx.closeSheet();
@@ -149,6 +201,7 @@ export const graphApp = {
     this.prompt = null;
     const active = this.fns();
     if (active.length && !active.some(a => a.i === this.sel)) this.sel = active[0].i;
+    const anyCurve = this.curves().length;
     this.canvas = h('canvas', { class: 'gcanvas', 'aria-label': 'Graph' });
     this.info = h('div', { class: 'ginfo' });
     this.promptEl = h('div', { class: 'gprompt' });
@@ -158,6 +211,7 @@ export const graphApp = {
       btn('Edit', () => this.showEdit()),
       this.traceBtn,
       btn('G-Solve', () => this.openGSolve()),
+      btn('Dynamic', () => this.openDynamic()),
       btn('−', () => this.zoom(2), 'sq'),
       btn('+', () => this.zoom(0.5), 'sq'),
       btn('Reset', () => { Object.assign(this.ctx.store.window, { xmin: -10, xmax: 10, xscl: 1, ymin: -7, ymax: 7, yscl: 1 }); this.ctx.save(); this.draw(); }));
@@ -166,8 +220,60 @@ export const graphApp = {
     this.bindCanvas();
     this.ro = new ResizeObserver(() => this.draw());
     this.ro.observe(wrap);
-    if (!active.length) this.setInfo('No graphs to draw. Tap Edit and type a function.');
+    if (!anyCurve) this.setInfo('No graphs to draw. Tap Edit and type a function.');
     else this.setInfo('');
+  },
+  openDynamic() {
+    const { h, store, seg } = this.ctx;
+    const used = new Set();
+    for (const g of store.graph) {
+      if (!g || !g.on || !g.latex) continue;
+      for (const src of [g.latex, g.latex2 || '']) for (const m of src.matchAll(/(?<![a-zA-Z\\{])([A-F])(?![a-zA-Z])/g)) used.add(m[1]);
+    }
+    if (!used.size) { this.setInfo('Use a letter A to F in a function (for example y = Ax²) to vary it.'); return; }
+    if (!store.dyn || !used.has(store.dyn.v)) store.dyn = { v: [...used][0], start: -5, end: 5, step: 0.5 };
+    const d = store.dyn;
+    const st = this.ctx.numField(d.start, { label: 'Start' }), en = this.ctx.numField(d.end, { label: 'End' }), sp = this.ctx.numField(d.step, { label: 'Step', noSign: true });
+    const body = h('div', { class: 'settings' },
+      h('div', { class: 'set-row' }, h('div', { class: 'set-label' }, 'Vary'), seg([...used].sort().map(x => [x, x]), d.v, v => { d.v = v; })),
+      h('div', { class: 'vwin' }, h('label', { class: 'vrow' }, h('span', {}, 'Start'), st.el), h('label', { class: 'vrow' }, h('span', {}, 'End'), en.el), h('label', { class: 'vrow' }, h('span', {}, 'Step'), sp.el)),
+      h('button', { type: 'button', class: 'primary wide', onclick: () => {
+        const a = st.get(), b = en.get(), c = sp.get();
+        if (!(b > a) || !(c > 0)) return;
+        Object.assign(d, { start: a, end: b, step: c });
+        this.ctx.save(); this.ctx.closeSheet(); this.startDynamic();
+      } }, 'Start'));
+    this.ctx.openSheet('Dynamic graph', body);
+  },
+  startDynamic() {
+    const { h, store } = this.ctx;
+    const d = store.dyn;
+    this.promptEl.innerHTML = '';
+    const n = Math.round((d.end - d.start) / d.step);
+    const cur = Number.isFinite(store.vars[d.v]) ? store.vars[d.v] : d.start;
+    const k0 = Math.max(0, Math.min(n, Math.round((cur - d.start) / d.step)));
+    const slider = h('input', { type: 'range', min: '0', max: String(n), step: '1', value: String(k0), class: 'dyn-range', 'aria-label': 'Value of ' + d.v });
+    const lab = h('span', { class: 'dyn-val' });
+    const set = k => { const val = Number((d.start + k * d.step).toPrecision(12)); store.vars[d.v] = val; lab.textContent = d.v + ' = ' + val; this.draw(); };
+    slider.addEventListener('input', () => set(+slider.value));
+    let timer = null, dir = 1;
+    const play = h('button', { type: 'button', class: 'pill' }, '▶ Play');
+    play.addEventListener('click', () => {
+      if (timer) { clearInterval(timer); timer = null; play.textContent = '▶ Play'; return; }
+      play.textContent = '❚❚ Pause';
+      timer = setInterval(() => {
+        let k = +slider.value + dir;
+        if (k > n || k < 0) { dir = -dir; k = +slider.value + dir; }
+        slider.value = String(k); set(k);
+      }, 160);
+    });
+    const done = h('button', { type: 'button', class: 'pill' }, 'Done');
+    done.addEventListener('click', () => { if (timer) clearInterval(timer); this.ctx.save(); this.promptEl.classList.remove('on'); this.promptEl.innerHTML = ''; requestAnimationFrame(() => this.draw()); });
+    this.promptEl.append(h('div', { class: 'dyn' }, lab, slider, h('div', { class: 'dyn-btns' }, play, done)));
+    this.promptEl.classList.add('on');
+    this.dynTimer = () => { if (timer) clearInterval(timer); };
+    set(k0);
+    requestAnimationFrame(() => this.draw());
   },
   setInfo(html, nav) {
     const { h } = this.ctx;
@@ -227,6 +333,61 @@ export const graphApp = {
       for (let k = 0; k <= n; k++) { const x = a + (b - a) * k / n; const y = f(x); g.lineTo(v.X(x), v.Y(isFinite(y) ? clampN(y, v.ymin - 1e3, v.ymax + 1e3) : 0)); }
       g.lineTo(v.X(b), v.Y(0));
       g.closePath(); g.fill();
+    }
+    const curves = this.curves();
+    const [tmin, tmax] = this.tRange();
+    const af = this.ctx.angleFactor();
+    for (const c of curves) {
+      if (c.type === 'y') continue;
+      g.strokeStyle = color(c.i); g.lineWidth = 2.25; g.lineJoin = 'round';
+      if (c.type === 'r' || c.type === 'param') {
+        g.beginPath();
+        let pen = false;
+        const N = 1500;
+        for (let k = 0; k <= N; k++) {
+          const t = tmin + (tmax - tmin) * k / N;
+          let x, y;
+          if (c.type === 'r') { const r = c.f(t); x = r * Math.cos(t * af); y = r * Math.sin(t * af); }
+          else { x = c.fx(t); y = c.fy(t); }
+          if (!isFinite(x) || !isFinite(y)) { pen = false; continue; }
+          const px = v.X(x), py = clampN(v.Y(y), -H * 4, H * 5);
+          if (!pen) { g.moveTo(px, py); pen = true; } else g.lineTo(px, py);
+        }
+        g.stroke();
+      } else if (c.type === 'x') {
+        g.beginPath();
+        let pen = false;
+        const N = Math.ceil(H * 2);
+        for (let k = 0; k <= N; k++) {
+          const y = v.ymax - (v.ymax - v.ymin) * k / N, x = c.f(y);
+          if (!isFinite(x)) { pen = false; continue; }
+          const px = clampN(v.X(x), -W * 4, W * 5);
+          if (!pen) { g.moveTo(px, k / 2); pen = true; } else g.lineTo(px, k / 2);
+        }
+        g.stroke();
+      } else {
+        const above = c.type === 'y>' || c.type === 'y≥';
+        const strict = c.type === 'y>' || c.type === 'y<';
+        g.fillStyle = color(c.i) + '2e';
+        const N = Math.ceil(W);
+        for (let k = 0; k < N; k++) {
+          const y = c.f(v.ix(k + 0.5));
+          if (!isFinite(y)) continue;
+          const py = clampN(v.Y(y), 0, H);
+          if (above) g.fillRect(k, 0, 1, py); else g.fillRect(k, py, 1, H - py);
+        }
+        if (strict) g.setLineDash([7, 5]);
+        g.beginPath();
+        let pen = false;
+        for (let k = 0; k <= N * 2; k++) {
+          const y = c.f(v.ix(k / 2));
+          if (!isFinite(y)) { pen = false; continue; }
+          const py = clampN(v.Y(y), -H * 4, H * 5);
+          if (!pen) { g.moveTo(k / 2, py); pen = true; } else g.lineTo(k / 2, py);
+        }
+        g.stroke();
+        g.setLineDash([]);
+      }
     }
     for (const { i, f } of fns) {
       g.strokeStyle = color(i);

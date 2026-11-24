@@ -7,6 +7,15 @@ import { equationApp } from './apps/equation.js';
 import { distributionApp } from './apps/distribution.js';
 import { statisticsApp } from './apps/statistics.js';
 import { graphApp } from './apps/graph.js';
+import { matrixApp, vectorApp } from './apps/matrix.js';
+import { basenApp } from './apps/basen.js';
+import { physicsApp, periodicApp, constantsList, converterPanel, latexNumber } from './apps/physics.js';
+import { recursionApp } from './apps/recursion.js';
+import { conicsApp } from './apps/conics.js';
+import { graph3dApp } from './apps/graph3d.js';
+import { financialApp } from './apps/financial.js';
+import { spreadsheetApp } from './apps/spreadsheet.js';
+import { geometryApp } from './apps/geometry.js';
 
 MathfieldElement.fontsDirectory = './fonts';
 MathfieldElement.soundsDirectory = null;
@@ -267,6 +276,34 @@ function seg(options, value, onChange) {
   return wrap;
 }
 
+function numField(value = '', opts = {}) {
+  const input = h('input', { type: 'text', inputmode: 'decimal', autocomplete: 'off', spellcheck: 'false', class: 'num-in', value: String(value), 'aria-label': opts.label || 'Number' });
+  const pm = h('button', { type: 'button', class: 'pm', 'aria-label': 'Change sign' }, '±');
+  pm.addEventListener('click', () => {
+    const v = input.value.trim();
+    input.value = v.startsWith('-') || v.startsWith('−') ? v.slice(1) : '-' + v;
+    input.dispatchEvent(new Event('input'));
+  });
+  if (opts.onInput) input.addEventListener('input', () => opts.onInput(input.value));
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); if (opts.onEnter) opts.onEnter(); } });
+  const el = h('div', { class: 'num-wrap' }, input, opts.noSign ? null : pm);
+  return {
+    el, input,
+    get() {
+      const raw = input.value.trim().replace(/−/g, '-').replace(/×/g, '*');
+      if (raw === '') return opts.empty !== undefined ? opts.empty : NaN;
+      const n = Number(raw);
+      if (Number.isFinite(n)) return n;
+      try {
+        const latex = raw.replace(/pi|π/g, '\\pi ').replace(/sqrt\(([^)]*)\)/g, '\\sqrt{$1}').replace(/\*/g, '\\times ').replace(/\//g, '\\div ');
+        const r = engine.evaluate(latex);
+        return typeof r.value === 'number' ? r.value : NaN;
+      } catch (e) { return NaN; }
+    },
+    set(v) { input.value = String(v); }
+  };
+}
+
 function openSettings() {
   const s = store.settings;
   const set = (k, v) => { s[k] = v; save(); renderStatus(); if (current && current.onSettings) current.onSettings(); };
@@ -301,7 +338,7 @@ const CATALOG = [
   ['Calculus', [['d/dx', BASIC.ddx], ['∫ dx', BASIC.int], ['Σ sum', BASIC.sum], ['Π product', '\\prod_{x=#?}^{#?}\\left(#?\\right)']]],
   ['Complex', [['i', '\\mathrm{i}'], ['arg', '\\operatorname{arg}\\left(#?\\right)'], ['Conjg', '\\operatorname{Conjg}\\left(#?\\right)'], ['ReP', '\\operatorname{ReP}\\left(#?\\right)'], ['ImP', '\\operatorname{ImP}\\left(#?\\right)']]],
   ['Powers and roots', [['x²', '^{2}', true], ['x³', '^{3}', true], ['x⁻¹', '^{-1}', true], ['xⁿ', '^{#?}', true], ['√', '\\sqrt{#?}'], ['∛', '\\sqrt[3]{#?}'], ['ⁿ√', '\\sqrt[#?]{#?}'], ['10ˣ', '10^{#?}'], ['eˣ', '\\mathrm{e}^{#?}'], ['logₐb', BASIC.logab]]],
-  ['Other', [['Ans', '\\mathrm{Ans}'], ['%', '\\%', true], [',', ','], ['=', '=']]]
+  ['Other', [['Ans', '\\mathrm{Ans}'], ['%', '\\%', true], ['÷R remainder', '\\div\\mathrm{R}', true], [',', ','], ['=', '=']]]
 ];
 
 function openCatalog() {
@@ -314,7 +351,29 @@ function openCatalog() {
     }
     body.append(grid);
   }
+  body.append(h('div', { class: 'cat-h' }, 'Science'), h('div', { class: 'cat-grid two' },
+    h('button', { type: 'button', class: 'cat-item', onclick: () => openConstants() }, 'Scientific constants'),
+    h('button', { type: 'button', class: 'cat-item', onclick: () => openConversion() }, 'Unit conversion')));
   openSheet('Catalog', body, { tall: true });
+}
+
+function openConstants() {
+  const target = field;
+  const body = constantsList(ctx, c => { closeSheet(); if (target) focusField(target); insert(latexNumber(c.val)); });
+  openSheet('Scientific constants', body, { tall: true });
+}
+
+function openConversion() {
+  const target = field;
+  const body = converterPanel(ctx, { useLabel: 'Insert result', onUse: v => { closeSheet(); if (target) focusField(target); insert(latexNumber(v)); } });
+  openSheet('Unit conversion', body, { tall: true });
+}
+
+function toast(msg) {
+  const t = h('div', { class: 'toast', role: 'status' }, msg);
+  document.body.append(t);
+  requestAnimationFrame(() => t.classList.add('on'));
+  setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 300); }, 1600);
 }
 
 const VAR_NAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'x', 'y', 'z', 'M'];
@@ -352,16 +411,18 @@ function renderStatus() {
   statusEl.innerHTML = parts.join('');
 }
 
-const APPS = [calculateApp, equationApp, statisticsApp, distributionApp, graphApp];
+const APPS = [calculateApp, statisticsApp, distributionApp, spreadsheetApp, graphApp, geometryApp, recursionApp, conicsApp, graph3dApp, equationApp, matrixApp, vectorApp, basenApp, financialApp, physicsApp, periodicApp];
 
 const ctx = {
-  store, save, engine, parse, h, tex, makeField, focusField, setField, insert, openSheet, closeSheet, seg,
+  store, save, engine, parse, h, tex, makeField, numField, focusField, setField, insert, openSheet, closeSheet, seg,
   get field() { return field; },
   showKeypad(v) { document.body.classList.toggle('no-keys', !v); },
   setTitle(t) { titleEl.textContent = t; },
   angleFactor() { return ANGLE[store.settings.angle]; },
   valueLatex: (v, flags, mode, s) => valueLatex(v, flags, s || store.settings, mode, ANGLE[store.settings.angle]),
-  press
+  press,
+  toast,
+  openAppById(id) { const a = APPS.find(x => x.id === id); if (a) openApp(a); }
 };
 
 function cleanupFields() {
@@ -386,7 +447,18 @@ const ICONS = {
   equation: '<svg viewBox="0 0 48 48"><path d="M10 17h28M10 31h28" /><path d="M24 10v14" /></svg>',
   statistics: '<svg viewBox="0 0 48 48"><path d="M11 38V24M20 38V14M29 38V20M38 38V9"/></svg>',
   distribution: '<svg viewBox="0 0 48 48"><path d="M7 37c6 0 8-24 17-24s11 24 17 24"/><path d="M7 37h34"/></svg>',
-  graph: '<svg viewBox="0 0 48 48"><path d="M8 24h32M24 8v32" class="thin"/><path d="M9 36c7-1 9-24 15-24s8 18 15 20"/></svg>'
+  graph: '<svg viewBox="0 0 48 48"><path d="M8 24h32M24 8v32" class="thin"/><path d="M9 36c7-1 9-24 15-24s8 18 15 20"/></svg>',
+  spreadsheet: '<svg viewBox="0 0 48 48"><rect x="8" y="9" width="32" height="30" rx="4"/><path d="M8 19h32M8 29h32M19 9v30M30 9v30" class="thin"/></svg>',
+  geometry: '<svg viewBox="0 0 48 48"><path d="M10 37 24 10l14 27Z"/><circle cx="24" cy="28" r="7" class="thin"/></svg>',
+  recursion: '<svg viewBox="0 0 48 48"><circle cx="11" cy="35" r="2.5" class="f"/><circle cx="19" cy="29" r="2.5" class="f"/><circle cx="27" cy="21" r="2.5" class="f"/><circle cx="35" cy="11" r="2.5" class="f"/><path d="M8 40h32" class="thin"/></svg>',
+  conics: '<svg viewBox="0 0 48 48"><ellipse cx="24" cy="24" rx="16" ry="10"/><path d="M8 8c10 6 22 6 32 0M8 40c10-6 22-6 32 0" class="thin"/></svg>',
+  graph3d: '<svg viewBox="0 0 48 48"><path d="M24 8 39 16v16L24 40 9 32V16Z"/><path d="M9 16l15 8 15-8M24 24v16" class="thin"/></svg>',
+  matrix: '<svg viewBox="0 0 48 48"><path d="M14 9h-4v30h4M34 9h4v30h-4"/><circle cx="19" cy="18" r="2.2" class="f"/><circle cx="29" cy="18" r="2.2" class="f"/><circle cx="19" cy="30" r="2.2" class="f"/><circle cx="29" cy="30" r="2.2" class="f"/></svg>',
+  vector: '<svg viewBox="0 0 48 48"><path d="M10 38 36 12M24 12h12v12"/></svg>',
+  basen: '<svg viewBox="0 0 48 48"><text x="24" y="31" text-anchor="middle" font-size="17" font-weight="700" fill="#fff" stroke="none" font-family="-apple-system,system-ui,sans-serif">0x1F</text></svg>',
+  financial: '<svg viewBox="0 0 48 48"><path d="M30 13c-2-3-12-4-12 5 0 6 0 10-4 17h20M13 26h14"/></svg>',
+  physics: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="3" class="f"/><ellipse cx="24" cy="24" rx="16" ry="6.5" class="thin"/><ellipse cx="24" cy="24" rx="16" ry="6.5" transform="rotate(60 24 24)" class="thin"/><ellipse cx="24" cy="24" rx="16" ry="6.5" transform="rotate(-60 24 24)" class="thin"/></svg>',
+  periodic: '<svg viewBox="0 0 48 48"><rect x="11" y="10" width="26" height="28" rx="4"/><text x="24" y="31" text-anchor="middle" font-size="15" font-weight="700" fill="#fff" stroke="none" font-family="-apple-system,system-ui,sans-serif">Fe</text></svg>'
 };
 
 function showHome() {

@@ -6,6 +6,7 @@ const isNum = v => typeof v === 'number';
 const isCx = v => v && typeof v === 'object' && v.isComplex;
 const isMat = v => v && typeof v === 'object' && (v.isMatrix || Array.isArray(v));
 
+export { toMat, toVec };
 export const ANGLE = { deg: Math.PI / 180, rad: 1, gra: Math.PI / 200 };
 
 function clean(v) {
@@ -18,13 +19,70 @@ function clean(v) {
   return v;
 }
 
-const add = (a, b) => isNum(a) && isNum(b) ? a + b : clean(M.add(a, b));
-const sub = (a, b) => isNum(a) && isNum(b) ? a - b : clean(M.subtract(a, b));
-const mul = (a, b) => isNum(a) && isNum(b) ? a * b : clean(M.multiply(a, b));
+const dimErr = () => new CalcError('Dimension ERROR');
+function toMat(v) {
+  if (v && v.isMatrix) v = v.toArray();
+  if (!Array.isArray(v)) throw new CalcError('Math ERROR');
+  return Array.isArray(v[0]) ? v : [v];
+}
+function toVec(v) {
+  if (v && v.isMatrix) v = v.toArray();
+  if (!Array.isArray(v)) throw new CalcError('Math ERROR');
+  if (!Array.isArray(v[0])) return v;
+  if (v.length === 1) return v[0];
+  if (v.every(r => r.length === 1)) return v.map(r => r[0]);
+  throw dimErr();
+}
+function cleanMat(v) {
+  if (v && v.isMatrix) v = v.toArray();
+  const fix = x => typeof x === 'number' ? (Math.abs(x) < 1e-13 ? 0 : (Math.abs(x - Math.round(x)) < 1e-11 ? Math.round(x) : x)) : Array.isArray(x) ? x.map(fix) : x;
+  return fix(v);
+}
+function rowEchelon(m, reduced) {
+  const A = m.map(r => r.slice());
+  const R = A.length, C = A[0].length;
+  let lead = 0;
+  for (let r = 0; r < R && lead < C; r++) {
+    let i = r;
+    while (Math.abs(A[i][lead]) < 1e-12) { i++; if (i === R) { i = r; lead++; if (lead === C) return cleanMat(A); } }
+    [A[i], A[r]] = [A[r], A[i]];
+    const lv = A[r][lead];
+    A[r] = A[r].map(x => x / lv);
+    for (let k = reduced ? 0 : r + 1; k < R; k++) if (k !== r) { const f = A[k][lead]; A[k] = A[k].map((x, j) => x - f * A[r][j]); }
+    lead++;
+  }
+  return cleanMat(A);
+}
+function matOp(op, a, b) {
+  const ma = isMat(a), mb = isMat(b);
+  try {
+    if (op === 'mul' && ma && mb) {
+      const A = toMat(a), B = toMat(b);
+      const va = !Array.isArray(a[0]) && !(a.isMatrix), vb = !Array.isArray(b[0]) && !(b.isMatrix);
+      if (va && vb) { if (A[0].length !== B[0].length) throw dimErr(); return A[0].reduce((s, x, i) => s + x * B[0][i], 0); }
+      if (A[0].length !== B.length) throw dimErr();
+      return cleanMat(M.multiply(A, B));
+    }
+    if ((op === 'add' || op === 'sub') && ma !== mb) throw new CalcError('Syntax ERROR');
+    if ((op === 'add' || op === 'sub') && ma && mb) {
+      const A = toMat(a), B = toMat(b);
+      if (A.length !== B.length || A[0].length !== B[0].length) throw dimErr();
+    }
+    const r = M[{ add: 'add', sub: 'subtract', mul: 'multiply', div: 'divide' }[op]](a, b);
+    return cleanMat(r);
+  } catch (e) {
+    if (e instanceof CalcError) throw e;
+    throw dimErr();
+  }
+}
+const add = (a, b) => isNum(a) && isNum(b) ? a + b : (isMat(a) || isMat(b)) ? matOp('add', a, b) : clean(M.add(a, b));
+const sub = (a, b) => isNum(a) && isNum(b) ? a - b : (isMat(a) || isMat(b)) ? matOp('sub', a, b) : clean(M.subtract(a, b));
+const mul = (a, b) => isNum(a) && isNum(b) ? a * b : (isMat(a) || isMat(b)) ? matOp('mul', a, b) : clean(M.multiply(a, b));
 function div(a, b) {
   if (isNum(b) && b === 0) throw mathErr();
   if (isCx(b) && b.re === 0 && b.im === 0) throw mathErr();
-  if (isMat(b)) return clean(M.multiply(a, M.inv(b)));
+  if (isMat(b)) throw mathErr();
+  if (isMat(a)) return matOp('div', a, b);
   return isNum(a) && isNum(b) ? a / b : clean(M.divide(a, b));
 }
 
@@ -46,7 +104,13 @@ function smallRational(x, maxDen = 99) {
 function pow(a, b) {
   if (isMat(a)) {
     if (!isNum(b) || !Number.isInteger(b)) throw mathErr();
-    return clean(M.pow(a, b));
+    const m = toMat(a);
+    if (m.length !== m[0].length) throw dimErr();
+    if (b < 0) {
+      if (Math.abs(M.det(m)) < 1e-14) throw mathErr();
+      return cleanMat(M.pow(M.inv(m), -b));
+    }
+    return cleanMat(M.pow(m, b));
   }
   if (isNum(a) && isNum(b)) {
     if (a === 0 && b < 0) throw mathErr();
@@ -224,7 +288,7 @@ export class Engine {
         }
         return clean(M.pow(x, div(1, n)));
       }
-      case 'abs': need(1); return isNum(a[0]) ? Math.abs(a[0]) : (isMat(a[0]) ? M.norm(a[0]) : M.abs(a[0]));
+      case 'abs': need(1); if (isNum(a[0])) return Math.abs(a[0]); if (isMat(a[0])) { const m = toMat(a[0]); if (m.length === 1 || m.every(r => r.length === 1)) return Math.hypot(...m.flat()); return Math.abs(M.det(m)); } return M.abs(a[0]);
       case 'fact': need(1); return factorial(a[0]);
       case 'ncr': {
         need(2);
@@ -273,7 +337,22 @@ export class Engine {
       case 'conj': need(1); return isNum(a[0]) ? a[0] : M.conj(a[0]);
       case 're': need(1); return isNum(a[0]) ? a[0] : a[0].re;
       case 'im': need(1); return isNum(a[0]) ? 0 : a[0].im;
-      case 'det': need(1); return M.det(a[0]);
+      case 'det': need(1); { const m = toMat(a[0]); if (m.length !== m[0].length) throw dimErr(); const d = M.det(m); return Math.abs(d) < 1e-12 * Math.max(1, ...m.flat().map(Math.abs)) ? 0 : d; }
+      case 'trn': need(1); return M.transpose(toMat(a[0]));
+      case 'ide': need(1); { const n = asInt(a[0]); if (n < 1 || n > 6) throw mathErr(); return M.identity(n).toArray(); }
+      case 'ref': need(1); return rowEchelon(toMat(a[0]), false);
+      case 'rref': need(1); return rowEchelon(toMat(a[0]), true);
+      case 'dim': need(1); { const m = toMat(a[0]); return { pair: true, labels: ['m', 'n'], values: [m.length, m[0].length] }; }
+      case 'dotp': need(2); { const [u, v] = [toVec(a[0]), toVec(a[1])]; if (u.length !== v.length) throw dimErr(); return u.reduce((s, x, i) => s + x * v[i], 0); }
+      case 'crossp': need(2); { let [u, v] = [toVec(a[0]), toVec(a[1])]; if (u.length === 2) u = [...u, 0]; if (v.length === 2) v = [...v, 0]; if (u.length !== 3 || v.length !== 3) throw dimErr(); return [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]; }
+      case 'vangle': need(2); { const [u, v] = [toVec(a[0]), toVec(a[1])]; if (u.length !== v.length) throw dimErr(); const nu = Math.hypot(...u), nv = Math.hypot(...v); if (!nu || !nv) throw mathErr(); const c = Math.max(-1, Math.min(1, u.reduce((s, x, i) => s + x * v[i], 0) / (nu * nv))); return Math.acos(c) / ANGLE[this.settings.angle]; }
+      case 'unitv': need(1); { const u = toVec(a[0]); const n = Math.hypot(...u); if (!n) throw mathErr(); return u.map(x => x / n); }
+      case 'rem': {
+        need(2);
+        const x = asInt(a[0]), y = asInt(a[1]);
+        if (x < 0 || y <= 0) throw mathErr();
+        return { pair: true, labels: ['Q', 'R'], values: [Math.floor(x / y), x % y] };
+      }
       default: throw new CalcError('Syntax ERROR');
     }
   }
@@ -284,11 +363,17 @@ export class Engine {
       case 'const': return node.n === 'pi' ? Math.PI : node.n === 'e' ? Math.E : M.complex(0, 1);
       case 'var': {
         if (node.n in scope) return scope[node.n];
+        if (/^Mat/.test(node.n) || /^Vct/.test(node.n)) {
+          const bank = /^Mat/.test(node.n) ? this.store.mats : this.store.vecs;
+          const m = bank && bank[node.n];
+          if (!m) throw new CalcError('Dimension ERROR');
+          return structuredClone(m);
+        }
         const vars = this.vars();
         if (node.n in vars) return vars[node.n];
         return 0;
       }
-      case 'neg': { const v = this.ev(node.a, scope); return isNum(v) ? -v : clean(M.unaryMinus(v)); }
+      case 'neg': { const v = this.ev(node.a, scope); return isNum(v) ? -v : isMat(v) ? cleanMat(M.unaryMinus(v)) : clean(M.unaryMinus(v)); }
       case 'bin': {
         const a = this.ev(node.a, scope), b = this.ev(node.b, scope);
         switch (node.op) {
@@ -338,7 +423,15 @@ export class Engine {
 
   evaluate(latex, scope = {}) {
     const ast = parseLatex(latex);
-    let v = this.ev(ast, scope);
+    let v;
+    try { v = this.ev(ast, scope); }
+    catch (e) {
+      if (e instanceof CalcError) throw e;
+      const msg = String(e && e.message || '');
+      if (/dimension|size|square/i.test(msg)) throw new CalcError('Dimension ERROR');
+      throw new CalcError('Math ERROR');
+    }
+    if (v && v.isMatrix) v = v.toArray();
     v = clean(v);
     const flags = exprFlags(ast, this.settings.angle);
     this.check(v, flags.complex);
@@ -346,6 +439,8 @@ export class Engine {
   }
 
   check(v, allowComplex) {
+    if (isMat(v)) { if (toMat(v).flat().some(x => typeof x === 'number' && !isFinite(x))) throw mathErr(); return; }
+    if (v && v.pair) return;
     if (isNum(v)) { if (!isFinite(v) || Math.abs(v) >= 1e100) throw mathErr(); return; }
     if (isCx(v)) {
       if (!isFinite(v.re) || !isFinite(v.im)) throw mathErr();

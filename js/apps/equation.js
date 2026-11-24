@@ -84,7 +84,7 @@ export const equationApp = {
     const st = store.eq;
     this.el.innerHTML = '';
     const top = h('div', { class: 'eq-top' },
-      seg([['sim', 'Simultaneous'], ['poly', 'Polynomial'], ['solver', 'Solver']], st.mode, v => { st.mode = v; this.ctx.save(); this.build(); }));
+      seg([['sim', 'Simultaneous'], ['poly', 'Polynomial'], ['ineq', 'Inequality'], ['solver', 'Solver']], st.mode, v => { st.mode = v; this.ctx.save(); this.build(); }));
     this.el.append(top);
     this.body = h('div', { class: 'eq-body scroll' });
     this.el.append(this.body);
@@ -92,6 +92,7 @@ export const equationApp = {
     this.results = null;
     if (st.mode === 'sim') this.buildSim();
     else if (st.mode === 'poly') this.buildPoly();
+    else if (st.mode === 'ineq') this.buildIneq();
     else this.buildSolver();
   },
   chips(values, cur, label, onPick) {
@@ -139,6 +140,71 @@ export const equationApp = {
     this.body.append(grid);
     this.addActions();
   },
+  buildIneq() {
+    const { h, tex, store } = this.ctx;
+    const st = store.eq;
+    if (!st.ineq) st.ineq = { deg: 2, rel: '>', coefs: {} };
+    const q = st.ineq;
+    const d = q.deg;
+    this.body.append(this.chips([2, 3, 4], d, 'Degree', v => { q.deg = v; this.ctx.save(); this.build(); }));
+    const rels = [['>', '>'], ['ge', '≥'], ['<', '<'], ['le', '≤']];
+    this.body.append(h('div', { class: 'chips' }, h('span', { class: 'chips-label' }, 'Type'), this.ctx.seg(rels, q.rel, v => { q.rel = v; this.ctx.save(); this.build(); })));
+    const relTex = { '>': '>', ge: '\\ge', '<': '<', le: '\\le' }[q.rel];
+    const form = COEF.slice(0, d + 1).map((c, i) => { const p = d - i; return c + (p === 0 ? '' : p === 1 ? 'x' : 'x^{' + p + '}'); }).join('+') + relTex + '0';
+    this.body.append(h('div', { class: 'eq-form', html: tex(form) }));
+    const grid = h('div', { class: 'mgrid poly', style: `grid-template-columns: repeat(${Math.min(d + 1, 4)}, minmax(0,1fr))` });
+    const cells = q.coefs[d] || (q.coefs[d] = {});
+    for (let j = 0; j <= d; j++) grid.append(h('label', { class: 'pcell' }, h('span', { class: 'mhead', html: tex(COEF[j]) }), this.cell(cells, String(j))));
+    this.body.append(grid);
+    this.addActions();
+  },
+  solveIneq() {
+    const q = this.ctx.store.eq.ineq;
+    const d = q.deg;
+    const cells = q.coefs[d] || {};
+    const c = [];
+    for (let j = 0; j <= d; j++) c.push(this.evalCell(cells[String(j)]).value);
+    if (c[0] === 0) throw new CalcError('Math ERROR');
+    const f = x => c.reduce((s, k) => s * x + k, 0);
+    const scale = Math.max(1, ...c.map(Math.abs));
+    let roots = (d === 2 ? (() => { const D = c[1] * c[1] - 4 * c[0] * c[2]; if (D < -1e-12 * scale * scale) return []; const s = Math.sqrt(Math.max(0, D)); return [(-c[1] - s) / (2 * c[0]), (-c[1] + s) / (2 * c[0])]; })() : polyRoots(c).filter(r => Math.abs(r[1]) < 1e-7 * Math.max(1, cabs(r))).map(r => r[0]));
+    roots.sort((a, b) => a - b);
+    const R = [];
+    for (const r of roots) if (!R.length || Math.abs(r - R[R.length - 1]) > 1e-7 * Math.max(1, Math.abs(r))) R.push(Math.abs(r) < 1e-13 ? 0 : r);
+    const strict = q.rel === '>' || q.rel === '<';
+    const want = v => (q.rel === '>' || q.rel === 'ge') ? v > 0 : v < 0;
+    const pts = [-Infinity, ...R, Infinity];
+    const mid = (a, b) => a === -Infinity ? (b === Infinity ? 0 : b - 1) : b === Infinity ? a + 1 : (a + b) / 2;
+    const segs = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const inside = want(f(mid(a, b)));
+      const loIn = a !== -Infinity && !strict;
+      const hiIn = b !== Infinity && !strict;
+      if (inside) {
+        const last = segs[segs.length - 1];
+        if (last && last.b === a && (last.bIn || loIn)) { last.b = b; last.bIn = hiIn; }
+        else segs.push({ a, b, aIn: loIn, bIn: hiIn });
+      }
+    }
+    if (!strict) for (const r of R) {
+      if (segs.some(s => (s.a < r && r < s.b) || (s.a === r && s.aIn) || (s.b === r && s.bIn))) continue;
+      segs.push({ a: r, b: r, aIn: true, bIn: true });
+    }
+    segs.sort((p, q2) => p.a - q2.a);
+    const flags = { root: true };
+    const L = v => this.ctx.valueLatex(v, flags, this.resultMode === 'decimal' ? 'decimal' : 'standard');
+    if (!segs.length) return [{ msg: 'No Solution' }];
+    if (segs.length === 1 && segs[0].a === -Infinity && segs[0].b === Infinity) return [{ msg: 'All Real Numbers' }];
+    const parts = segs.map(s => {
+      const lo = s.aIn ? '\\le' : '<', hi = s.bIn ? '\\le' : '<';
+      if (s.a === s.b) return 'x=' + L(s.a);
+      if (s.a === -Infinity) return 'x' + hi + L(s.b);
+      if (s.b === Infinity) return L(s.a) + lo + 'x';
+      return L(s.a) + lo + 'x' + hi + L(s.b);
+    });
+    return parts.map(p => ({ label: '', latex: p }));
+  },
   buildSolver() {
     const { h, tex, store } = this.ctx;
     const st = store.eq.solver;
@@ -171,6 +237,7 @@ export const equationApp = {
   onKey(id) {
     if (id === 'sd' && this.lastSolve) {
       this.resultMode = this.resultMode === 'decimal' ? 'standard' : 'decimal';
+      if (this.ctx.store.eq.mode === 'ineq') { try { this.lastSolve = this.solveIneq(); } catch (e) {} }
       this.showResults(this.lastSolve);
       return true;
     }
@@ -196,9 +263,11 @@ export const equationApp = {
       let rows;
       if (st.mode === 'sim') rows = this.solveSim();
       else if (st.mode === 'poly') rows = this.solvePoly();
+      else if (st.mode === 'ineq') rows = this.solveIneq();
       else rows = this.solveSolver();
-      this.lastSolve = rows;
       this.resultMode = this.ctx.store.settings.io === 'dec' ? 'decimal' : 'standard';
+      if (st.mode === 'ineq') rows = this.solveIneq();
+      this.lastSolve = rows;
       this.showResults(rows);
     } catch (e) {
       this.lastSolve = null;

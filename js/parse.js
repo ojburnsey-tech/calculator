@@ -8,7 +8,8 @@ const INVERSE = { sin: 'asin', cos: 'acos', tan: 'atan', sinh: 'asinh', cosh: 'a
 const NAMED = {
   Abs: 'abs', Int: 'int', Intg: 'intg', Rnd: 'rnd', GCD: 'gcd', LCM: 'lcm', RanInt: 'ranint', 'Ran#': 'ran',
   Pol: 'pol', Rec: 'rec', sinh: 'sinh', cosh: 'cosh', tanh: 'tanh', arsinh: 'asinh', arcosh: 'acosh', artanh: 'atanh',
-  sinh_inv: 'asinh', arg: 'arg', Arg: 'arg', Conjg: 'conj', ReP: 're', ImP: 'im', Re: 're', Im: 'im', exp: 'exp', ln: 'ln', log: 'log'
+  sinh_inv: 'asinh', arg: 'arg', Arg: 'arg', Conjg: 'conj', ReP: 're', ImP: 'im', Re: 're', Im: 'im', exp: 'exp', ln: 'ln', log: 'log',
+  Det: 'det', Trn: 'trn', Identity: 'ide', Ref: 'ref', Rref: 'rref', DotP: 'dotp', CrossP: 'crossp', Angle: 'vangle', UnitV: 'unitv', Dim: 'dim'
 };
 const VARS = new Set(['x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'M', 't', 'X', 'Y']);
 const SPACING = new Set([',', ';', ':', ' ', '!', 'quad', 'qquad', 'thinspace', 'medspace', 'thickspace', 'enspace']);
@@ -115,17 +116,20 @@ function parseExpr(st, minPrec) {
     let op = null, prec = 0;
     if (isCh(it, '+') || isCh(it, '-')) { op = it.c; prec = 10; }
     else if (isCh(it, '*') || isCmd(it, 'times', 'cdot', 'ast')) { op = '*'; prec = 20; }
+    else if (isCmd(it, 'div') && isName(st.peek(1), 'R')) { op = 'rem'; prec = 5; }
     else if (isCh(it, '/') || isCmd(it, 'div')) { op = '/'; prec = 20; }
     else if (isName(it, 'C', 'P')) { op = it.text; prec = 25; }
     else if (isCh(it, ',') || isCh(it, '=') || isCh(it, '<') || isCh(it, '>') || isCmd(it, 'le', 'ge', 'leq', 'geq', 'lt', 'gt', 'ne')) break;
     else if (startsPrimary(it)) { op = 'imp'; prec = 30; }
     else break;
     if (prec < minPrec) break;
+    if (op === 'rem') st.next();
     if (op !== 'imp') st.next();
     const right = parseExpr(st, prec + 1);
     if (op === 'imp') left = { k: 'bin', op: '*', a: left, b: right, imp: true };
     else if (op === 'C') left = { k: 'fn', n: 'ncr', args: [left, right] };
     else if (op === 'P') left = { k: 'fn', n: 'npr', args: [left, right] };
+    else if (op === 'rem') left = { k: 'fn', n: 'rem', args: [left, right] };
     else left = { k: 'bin', op, a: left, b: right };
   }
   return left;
@@ -305,6 +309,10 @@ function parsePrimary(st) {
       return { k: 'fn', n: 'abs', args: [parseSeq(inner)] };
     }
     if (/[a-zA-Z]/.test(it.c)) {
+      if ((it.c === 'a' || it.c === 'b') && st.peek() && st.peek().t === 'sub') {
+        const sub = flat(st.next().items).replace(/\s/g, '');
+        return { k: 'var', n: it.c + '_' + sub };
+      }
       if (it.c === 'e') return { k: 'const', n: 'e' };
       if (it.c === 'i') return { k: 'const', n: 'i' };
       return { k: 'var', n: it.c };
@@ -341,8 +349,8 @@ function parsePrimary(st) {
     if (t === 'i') return { k: 'const', n: 'i' };
     if (t === 'd' && st.peek() && st.peek().t === 'ch') return { k: 'var', n: 'd' + st.next().c };
     if (t in NAMED || t in TRIG || t in INVERSE) return makeFn(st, t);
-    if (/^Mat[A-F]$/.test(t)) return { k: 'var', n: t };
-    if (/^Vct[A-D]$/.test(t)) return { k: 'var', n: t };
+    if (/^Mat([A-F]|Ans)$/.test(t)) return { k: 'var', n: t };
+    if (/^Vct([A-D]|Ans)$/.test(t)) return { k: 'var', n: t };
     if (t.length === 1 && /[a-zA-Z]/.test(t)) return { k: 'var', n: t };
     throw syntax();
   }
