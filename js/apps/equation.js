@@ -79,12 +79,17 @@ export const equationApp = {
     this.build();
   },
   unmount() { this.ctx.save(); },
+  setMode(mode) {
+    this.ctx.store.eq.mode = mode;
+    this.ctx.save();
+    this.build();
+  },
   build() {
     const { h, seg, store } = this.ctx;
     const st = store.eq;
     this.el.innerHTML = '';
     const top = h('div', { class: 'eq-top' },
-      seg([['sim', 'Simultaneous'], ['poly', 'Polynomial'], ['ineq', 'Inequality'], ['solver', 'Solver']], st.mode, v => { st.mode = v; this.ctx.save(); this.build(); }));
+      seg([['sim', 'Simultaneous'], ['poly', 'Polynomial'], ['ineq', 'Inequality'], ['solver', 'Solver']], st.mode, v => this.setMode(v)));
     this.el.append(top);
     this.body = h('div', { class: 'eq-body scroll' });
     this.el.append(this.body);

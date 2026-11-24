@@ -43,8 +43,28 @@ export const graphApp = {
   },
   unmount() {
     this.ctx.save();
-    if (this.dynTimer) this.dynTimer();
-    if (this.ro) { this.ro.disconnect(); this.ro = null; }
+    this.leavePlot();
+  },
+  leavePlot() {
+    this.dynTimer?.();
+    this.dynTimer = null;
+    this.ro?.disconnect();
+    this.ro = null;
+    this.prompt = null;
+    this.ctx.setField(null);
+  },
+  setTab(tab) {
+    this.ctx.setTabs([
+      { id: 'edit', label: 'Functions', open: () => this.showEdit() },
+      { id: 'graph', label: 'Graph', open: () => this.showGraph() },
+      { id: 'table', label: 'Table', open: () => this.showTable() }
+    ], tab);
+  },
+  onBack() {
+    if (this.mode === 'edit') return false;
+    if (this.prompt) this.closePrompt();
+    else this.showEdit();
+    return true;
   },
   fns() {
     const { store, parse } = this.ctx;
@@ -100,8 +120,9 @@ export const graphApp = {
   },
   showEdit() {
     const { h, tex, store } = this.ctx;
+    this.leavePlot();
     this.mode = 'edit';
-    if (this.ro) { this.ro.disconnect(); this.ro = null; }
+    this.setTab(this.mode);
     this.ctx.showKeypad(true);
     this.ctx.setTitle('Graph & Table');
     this.el.innerHTML = '';
@@ -190,7 +211,9 @@ export const graphApp = {
   },
   showGraph() {
     const { h } = this.ctx;
+    this.leavePlot();
     this.mode = 'graph';
+    this.setTab(this.mode);
     this.ctx.showKeypad(false);
     this.ctx.setTitle('Graph');
     this.el.innerHTML = '';
@@ -708,6 +731,7 @@ export const graphApp = {
   },
   closePrompt() {
     this.prompt = null;
+    this.ctx.setField(null);
     this.promptEl.classList.remove('on');
     this.promptEl.innerHTML = '';
     this.ctx.showKeypad(false);
@@ -715,7 +739,9 @@ export const graphApp = {
   },
   showTable() {
     const { h, tex, store } = this.ctx;
+    this.leavePlot();
     this.mode = 'table';
+    this.setTab(this.mode);
     this.ctx.showKeypad(true);
     this.ctx.setTitle('Table');
     this.el.innerHTML = '';
