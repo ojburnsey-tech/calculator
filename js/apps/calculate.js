@@ -31,9 +31,16 @@ export const calculateApp = {
     this.ctx = ctx;
     const { h } = ctx;
     if (!ctx.store.history) ctx.store.history = [];
+    this.replayIndex = null;
+    this.replayDraft = '';
     this.hist = h('div', { class: 'hist scroll' });
     this.err = h('div', { class: 'err', role: 'alert' });
-    this.mf = ctx.makeField(ctx.store.calcDraft || '', { class: 'calc-input', onInput: v => { this.err.textContent = ''; this.err.classList.remove('on'); ctx.store.calcDraft = v; } });
+    this.mf = ctx.makeField(ctx.store.calcDraft || '', { class: 'calc-input', onInput: v => {
+      this.err.textContent = '';
+      this.err.classList.remove('on');
+      this.replayIndex = null;
+      ctx.store.calcDraft = v;
+    } });
     const entry = h('div', { class: 'entry' }, this.mf, this.err);
     el.append(h('div', { class: 'calc' }, this.hist, entry));
     this.render();
@@ -54,21 +61,33 @@ export const calculateApp = {
     const { h, tex, store } = this.ctx;
     this.hist.innerHTML = '';
     const items = store.history.slice(-40);
-    if (!items.length) this.hist.append(h('div', { class: 'hist-empty' }, 'Type a calculation and press EXE'));
     items.forEach((item, idx) => {
       const out = this.latexFor(item);
       const row = h('button', { type: 'button', class: 'h-item' + (idx === items.length - 1 ? ' last' : ''), 'aria-label': 'Reuse this calculation' },
         h('div', { class: 'h-in', html: tex(item.latex) }),
         h('div', { class: 'h-out', html: tex(out) }));
       row.addEventListener('click', () => {
-        this.mf.value = item.latex;
-        store.calcDraft = item.latex;
-        this.ctx.focusField(this.mf);
-        this.mf.executeCommand('moveToMathfieldEnd');
+        if (this.replayIndex === null) this.replayDraft = this.mf.value;
+        this.replayIndex = store.history.length - items.length + idx;
+        this.loadDraft(item.latex);
       });
       this.hist.append(row);
     });
     requestAnimationFrame(() => { this.hist.scrollTop = this.hist.scrollHeight; });
+  },
+  loadDraft(latex) {
+    this.mf.value = latex;
+    this.ctx.store.calcDraft = latex;
+    this.ctx.focusField(this.mf);
+    this.mf.executeCommand('moveToMathfieldEnd');
+  },
+  replay(offset) {
+    const history = this.ctx.store.history;
+    if (!history.length) return;
+    if (this.replayIndex === null) this.replayDraft = this.mf.value;
+    const next = Math.max(0, (this.replayIndex ?? history.length) + offset);
+    this.replayIndex = next < history.length ? next : null;
+    this.loadDraft(history[next]?.latex ?? this.replayDraft);
   },
   beforeOperator() {
     if (this.ctx.field === this.mf && !this.mf.value.trim() && this.ctx.store.history.length) this.ctx.insert('\\mathrm{Ans}');
@@ -88,6 +107,7 @@ export const calculateApp = {
       store.history.push({ latex, value: ser(v), flags: r.flags, mode });
       if (store.history.length > 60) store.history.splice(0, store.history.length - 60);
       this.mf.value = '';
+      this.replayIndex = null;
       store.calcDraft = '';
       this.ctx.save();
       this.render();
@@ -99,6 +119,7 @@ export const calculateApp = {
   onSettings() { this.render(); },
   onKey(id) {
     const { store } = this.ctx;
+    if (id === 'up' || id === 'down') { this.replay(id === 'up' ? -1 : 1); return true; }
     const last = store.history[store.history.length - 1];
     if (id === 'sd') {
       if (!last) return true;

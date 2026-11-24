@@ -66,11 +66,17 @@ const view = $('#view');
 const keypadEl = $('#keypad');
 const titleEl = $('#title');
 const statusEl = $('#status');
-const homeBtn = $('#homeBtn');
+const controlsEl = $('#controls');
+const tabsEl = $('#displayTabs');
+const connectionEl = $('#connection');
 
 let field = null;
 let lastJump = null;
-let shift = false;
+let modifier = null;
+let displayTabs = [];
+let activeTab = null;
+let homeTiles = [];
+let homeIndex = 0;
 let current = null;
 const fields = new Set();
 
@@ -125,46 +131,65 @@ function insert(latex) {
 
 const FRAC = '<span class="kf"><i></i><i></i></span>';
 const BOX = '<i class="kb"></i>';
-const KEYS_TOP = [
+const key = (id, label, options = {}) => ({ id, label, ...options });
+const shifted = (label, act, op = false) => ({ label, act, op });
+
+// Keep the original action IDs so the existing apps can handle the new keypad.
+const COMMAND_KEYS = [
+  [key('home', 'Home'), key('settings', 'Settings'), key('back', 'Back'), key('prev-tab', '|‹', { name: 'Previous tab' })],
   [
-    { id: 'shift', label: 'SHIFT', cls: 'shift' },
-    { id: 'x', label: '<em>x</em>', s: { label: ',', act: ',' } },
-    { id: 'frac', label: FRAC, s: { label: 'θ', act: '\\theta' } },
-    { id: 'sqrt', label: '√' + BOX, s: { label: '∛', act: '\\sqrt[3]{#?}' } },
-    { id: 'sq', label: '<em>x</em><sup>2</sup>', s: { label: '<em>x</em><sup>−1</sup>', act: '^{-1}', op: true } },
-    { id: 'pow', label: '<em>x</em><sup>' + BOX + '</sup>', s: { label: '<sup>' + BOX + '</sup>√', act: '\\sqrt[#?]{#?}' } }
+    key('up', '⌃', { name: 'Up', cls: 'up' }),
+    key('left', '‹', { name: 'Left', cls: 'left', s: shifted('⇤', 'start') }),
+    key('ok', 'OK', { cls: 'ok' }),
+    key('right', '›', { name: 'Right', cls: 'right', s: shifted('⇥', 'end') }),
+    key('down', '⌄', { name: 'Down', cls: 'down' })
   ],
   [
-    { id: 'log', label: 'log', s: { label: '10<sup>' + BOX + '</sup>', act: '10^{#?}' } },
-    { id: 'ln', label: 'ln', s: { label: 'e<sup>' + BOX + '</sup>', act: '\\mathrm{e}^{#?}' } },
-    { id: 'sin', label: 'sin', s: { label: 'sin<sup>−1</sup>', act: '\\sin^{-1}\\left(#?\\right)' } },
-    { id: 'cos', label: 'cos', s: { label: 'cos<sup>−1</sup>', act: '\\cos^{-1}\\left(#?\\right)' } },
-    { id: 'tan', label: 'tan', s: { label: 'tan<sup>−1</sup>', act: '\\tan^{-1}\\left(#?\\right)' } },
-    { id: 'logab', label: 'log<sub>' + BOX + '</sub>', s: { label: '<em>x</em><sup>3</sup>', act: '^{3}', op: true } }
-  ],
-  [
-    { id: 'lp', label: '(', s: { label: '|' + BOX + '|', act: '\\left|#?\\right|' } },
-    { id: 'rp', label: ')', s: { label: '<em>x</em>!', act: '!', op: true } },
-    { id: 'pi', label: 'π', s: { label: 'e', act: '\\mathrm{e}' } },
-    { id: 'ddx', label: '<sup>d</sup>⁄<sub>d<em>x</em></sub>', s: { label: '°', act: '\\degree' } },
-    { id: 'int', label: '∫', s: { label: '<em>n</em>C<em>r</em>', act: '\\,\\mathrm{C}\\,', op: true } },
-    { id: 'sum', label: 'Σ', s: { label: '<em>n</em>P<em>r</em>', act: '\\,\\mathrm{P}\\,', op: true } }
-  ],
-  [
-    { id: 'left', label: '◀', cls: 'nav', s: { label: '⇤', act: 'start' } },
-    { id: 'right', label: '▶', cls: 'nav', s: { label: '⇥', act: 'end' } },
-    { id: 'sd', label: 'S⇔D', cls: 'tool' },
-    { id: 'format', label: 'FORMAT', cls: 'tool small' },
-    { id: 'variable', label: 'VAR', cls: 'tool small', s: { label: 'STO', act: 'sto' } },
-    { id: 'catalog', label: 'CATALOG', cls: 'tool small', s: { label: 'SETUP', act: 'setup' } }
+    key('variable', 'Variable', { s: shifted('STO', 'sto') }),
+    key('catalog', 'Catalog', { s: shifted('SETUP', 'setup') }),
+    key('tools', 'Tools'),
+    key('next-tab', '›|', { name: 'Next tab' })
   ]
 ];
-const KEYS_BOTTOM = [
-  [{ id: '7', label: '7' }, { id: '8', label: '8' }, { id: '9', label: '9' }, { id: 'del', label: 'DEL', cls: 'del' }, { id: 'ac', label: 'AC', cls: 'ac' }],
-  [{ id: '4', label: '4' }, { id: '5', label: '5' }, { id: '6', label: '6' }, { id: 'mul', label: '×', cls: 'op' }, { id: 'div', label: '÷', cls: 'op' }],
-  [{ id: '1', label: '1' }, { id: '2', label: '2' }, { id: '3', label: '3' }, { id: 'add', label: '+', cls: 'op' }, { id: 'sub', label: '−', cls: 'op' }],
-  [{ id: '0', label: '0' }, { id: 'dot', label: '.', s: { label: '=', act: '=' } }, { id: 'exp10', label: '×10<sup><em>x</em></sup>', s: { label: '<em>i</em>', act: '\\mathrm{i}' } }, { id: 'ans', label: 'Ans', s: { label: 'Ran#', act: '\\operatorname{Ran\\#}' } }, { id: 'exe', label: 'EXE', cls: 'exe' }]
+
+const MODIFIER_KEYS = [
+  key('shift', 'Shift', { cls: 'shift' }),
+  key('alpha', 'Alpha', { cls: 'alpha' }),
+  key('pi', 'π', { s: shifted('e', '\\mathrm{e}') }),
+  key('ans', 'Ans', { s: shifted('Ran#', '\\operatorname{Ran\\#}') }),
+  key('sd', 'S⇔D', { name: 'Exact or decimal' })
 ];
+
+const SCIENCE_KEYS = [
+  key('x', '<em>x</em>', { name: 'Variable x', a: 'A', s: shifted(',', ',') }),
+  key('frac', FRAC, { name: 'Fraction', a: 'B', s: shifted('θ', '\\theta') }),
+  key('sqrt', '√' + BOX, { name: 'Square root', a: 'C', s: shifted('∛', '\\sqrt[3]{#?}') }),
+  key('pow', '<em>x</em><sup>' + BOX + '</sup>', { name: 'Power', a: 'D', s: shifted('<sup>' + BOX + '</sup>√', '\\sqrt[#?]{#?}') }),
+  key('sq', '<em>x</em><sup>2</sup>', { name: 'Square', a: 'E', s: shifted('<em>x</em><sup>−1</sup>', '^{-1}', true) }),
+  key('expe', '<em>e</em><sup>' + BOX + '</sup>', { name: 'Exponential', a: 'F' }),
+  key('comma', ',', { name: 'Comma' }),
+  key('sin', 'sin', { s: shifted('sin<sup>−1</sup>', '\\sin^{-1}\\left(#?\\right)') }),
+  key('cos', 'cos', { s: shifted('cos<sup>−1</sup>', '\\cos^{-1}\\left(#?\\right)') }),
+  key('tan', 'tan', { s: shifted('tan<sup>−1</sup>', '\\tan^{-1}\\left(#?\\right)') }),
+  key('lp', '(', { name: 'Open parenthesis', s: shifted('|' + BOX + '|', '\\left|#?\\right|') }),
+  key('rp', ')', { name: 'Close parenthesis', s: shifted('<em>x</em>!', '!', true) }),
+  key('logab', 'log<sub>' + BOX + '</sub>', { name: 'Logarithm with base', s: shifted('<em>x</em><sup>3</sup>', '^{3}', true) }),
+  key('log', 'log', { s: shifted('10<sup>' + BOX + '</sup>', '10^{#?}') }),
+  key('ln', 'ln', { s: shifted('e<sup>' + BOX + '</sup>', '\\mathrm{e}^{#?}') }),
+  key('ddx', 'd/d<em>x</em>', { name: 'Derivative', s: shifted('°', '\\degree') }),
+  key('int', '∫', { name: 'Integral', s: shifted('<em>n</em>C<em>r</em>', '\\,\\mathrm{C}\\,', true) }),
+  key('sum', 'Σ', { name: 'Summation', s: shifted('<em>n</em>P<em>r</em>', '\\,\\mathrm{P}\\,', true) })
+];
+
+const NUMBER_KEYS = [
+  key('7', '7', { a: 'M' }), key('8', '8'), key('9', '9'), key('del', 'DEL', { name: 'Delete', cls: 'del' }), key('ac', 'AC', { name: 'All clear', cls: 'ac' }),
+  key('4', '4'), key('5', '5'), key('6', '6'), key('mul', '×', { name: 'Multiply', cls: 'op' }), key('div', '÷', { name: 'Divide', cls: 'op' }),
+  key('1', '1'), key('2', '2'), key('3', '3'), key('add', '+', { name: 'Add', cls: 'op', a: 'x' }), key('sub', '−', { name: 'Subtract', cls: 'op', a: 'y' }),
+  key('0', '0', { a: 'z' }), key('dot', '.', { name: 'Decimal point', s: shifted('=', '=') }), key('exp10', '×10<sup><em>x</em></sup>', { name: 'Scientific notation', s: shifted('<em>i</em>', '\\mathrm{i}') }),
+  key('format', 'Format', { cls: 'small' }), key('exe', 'EXE', { cls: 'exe' })
+];
+
+const KEYS = new Map([...COMMAND_KEYS.flat(), ...MODIFIER_KEYS, ...SCIENCE_KEYS, ...NUMBER_KEYS].map(k => [k.id, k]));
 
 const BASIC = {
   '0': '0', '1': '1', '2': '2', '3': '3', '4': '4', '5': '5', '6': '6', '7': '7', '8': '8', '9': '9', dot: '.',
@@ -172,48 +197,79 @@ const BASIC = {
   log: '\\log\\left(#?\\right)', ln: '\\ln\\left(#?\\right)', sin: '\\sin\\left(#?\\right)', cos: '\\cos\\left(#?\\right)', tan: '\\tan\\left(#?\\right)',
   logab: '\\log_{#?}\\left(#?\\right)', lp: '(', rp: ')', pi: '\\pi',
   ddx: '\\frac{\\mathrm{d}}{\\mathrm{d}x}\\left(#?\\right)\\Big|_{x=#?}', int: '\\int_{#?}^{#?}#?\\,\\mathrm{d}x', sum: '\\sum_{x=#?}^{#?}\\left(#?\\right)',
+  comma: ',', expe: '\\mathrm{e}^{#?}',
   add: '+', sub: '-', mul: '\\times', div: '\\div', exp10: '\\times10^{#?}', ans: '\\mathrm{Ans}'
 };
 const OPERATOR_KEYS = new Set(['add', 'sub', 'mul', 'div', 'sq', 'pow']);
 
 function buildKeypad() {
-  keypadEl.innerHTML = '';
-  const mk = (rows, cls) => {
-    const grid = h('div', { class: 'grid ' + cls });
-    for (const row of rows) for (const k of row) {
-      const b = h('button', { class: 'key ' + (k.cls || ''), 'data-id': k.id, type: 'button' });
-      if (k.s) b.append(h('span', { class: 'sl', html: k.s.label }));
+  const group = (keys, cls) => {
+    const grid = h('div', { class: cls });
+    for (const k of keys) {
+      const b = h('button', {
+        class: 'key ' + (k.cls || ''), 'data-id': k.id, type: 'button', 'aria-label': k.name,
+        'aria-pressed': ['shift', 'alpha'].includes(k.id) ? 'false' : null
+      });
+      if (k.s || k.a) b.append(h('span', { class: 'legends', 'aria-hidden': 'true' },
+        h('span', { class: 'sl', html: k.s?.label || '' }), h('span', { class: 'al' }, k.a)));
       b.append(h('span', { class: 'ml', html: k.label }));
-      b.addEventListener('pointerdown', e => { e.preventDefault(); b.classList.add('down'); });
-      const up = () => b.classList.remove('down');
-      b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
-      b.addEventListener('click', e => { e.preventDefault(); press(k.id, k); });
+      b.addEventListener('pointerdown', e => { e.preventDefault(); b.classList.add('pressed'); });
+      const up = () => b.classList.remove('pressed');
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+      b.addEventListener('pointerleave', up);
+      b.addEventListener('click', () => press(k.id));
       grid.append(b);
     }
     return grid;
   };
-  keypadEl.append(mk(KEYS_TOP, 'top'), mk(KEYS_BOTTOM, 'bottom'));
+  controlsEl.append(
+    group(COMMAND_KEYS[0], 'command-cluster'),
+    group(COMMAND_KEYS[1], 'direction-pad'),
+    group(COMMAND_KEYS[2], 'command-cluster')
+  );
+  keypadEl.append(
+    group(MODIFIER_KEYS, 'modifier-keys'),
+    group(SCIENCE_KEYS, 'science-keys'),
+    group(NUMBER_KEYS, 'number-keys')
+  );
 }
 
-function setShift(v) {
-  shift = v;
-  keypadEl.classList.toggle('shifted', v);
+function setModifier(next) {
+  modifier = next;
+  document.body.classList.toggle('shifted', next === 'shift');
+  document.body.classList.toggle('alpha-on', next === 'alpha');
+  for (const id of ['shift', 'alpha']) {
+    const button = $('.key[data-id="' + id + '"]');
+    if (button) button.setAttribute('aria-pressed', String(next === id));
+  }
   renderStatus();
 }
 
-function press(id, k) {
-  k = k || [...KEYS_TOP, ...KEYS_BOTTOM].flat().find(x => x.id === id) || { id };
-  if (id === 'shift') { setShift(!shift); return; }
-  const wasShift = shift;
-  if (shift) setShift(false);
-  if (wasShift && k.s) {
+function press(id) {
+  const k = KEYS.get(id);
+  if (id === 'shift' || id === 'alpha') { setModifier(modifier === id ? null : id); return; }
+  const activeModifier = modifier;
+  if (modifier) setModifier(null);
+
+  if (id === 'home') { closeSheet(); showHome(); return; }
+  if (id === 'back') { goBack(); return; }
+  if (id === 'settings') { if (!sheetEl.inert) closeSheet(); openSettings(); return; }
+  if (!sheetEl.inert) return;
+  if (id === 'prev-tab' || id === 'next-tab') { stepTab(id === 'prev-tab' ? -1 : 1); return; }
+  if (!current) { pressHomeKey(id, activeModifier === 'alpha' ? k?.a : null); return; }
+  if (id === 'tools') { openTools(); return; }
+  if (id === 'ok') id = 'exe';
+
+  if (activeModifier === 'alpha' && k?.a) { insert(k.a); return; }
+  if (activeModifier === 'shift' && k?.s) {
     const act = k.s.act;
-    if (act === 'start') { field && field.executeCommand('moveToMathfieldStart'); return; }
-    if (act === 'end') { field && field.executeCommand('moveToMathfieldEnd'); return; }
+    if (act === 'start') { field?.executeCommand('moveToMathfieldStart'); return; }
+    if (act === 'end') { field?.executeCommand('moveToMathfieldEnd'); return; }
     if (act === 'sto') { openVariables(true); return; }
     if (act === 'setup') { openSettings(); return; }
-    if (current && current.onKey && current.onKey('s:' + k.id, act)) return;
-    if (k.s.op && current && current.beforeOperator) current.beforeOperator();
+    if (current.onKey?.('s:' + k.id, act)) return;
+    if (k.s.op) current.beforeOperator?.();
     insert(act);
     return;
   }
@@ -222,6 +278,13 @@ function press(id, k) {
   switch (id) {
     case 'del': if (field) field.executeCommand('deleteBackward'); return;
     case 'ac': if (field) { field.value = ''; field.dispatchEvent(new Event('input')); } if (current && current.onAC) current.onAC(); return;
+    case 'up': case 'down': {
+      const visibleFields = [...view.querySelectorAll('math-field')].filter(el => el.getClientRects().length);
+      const index = visibleFields.indexOf(field);
+      const next = visibleFields[index + (id === 'up' ? -1 : 1)];
+      if (next) { focusField(next); next.scrollIntoView({ block: 'nearest' }); }
+      return;
+    }
     case 'left': if (field) field.executeCommand('moveToPreviousChar'); return;
     case 'right': if (field) {
       let after = '';
@@ -247,28 +310,39 @@ function press(id, k) {
 const sheetEl = $('#sheet');
 const scrimEl = $('#scrim');
 let sheetClose = null;
+let sheetReturnFocus = null;
 
 function openSheet(title, body, opts = {}) {
+  if (sheetEl.inert) sheetReturnFocus = document.activeElement;
+  sheetEl.inert = false;
+  view.inert = true;
+  tabsEl.inert = true;
   sheetEl.innerHTML = '';
   const head = h('div', { class: 'sheet-head' },
-    h('div', { class: 'grab' }),
-    h('div', { class: 'sheet-bar' }, h('h2', {}, title), h('button', { class: 'done', type: 'button', onclick: () => closeSheet() }, opts.doneLabel || 'Done')));
+    h('div', { class: 'sheet-bar' }, h('h2', { id: 'sheetTitle' }, title), h('button', { class: 'done', type: 'button', onclick: () => closeSheet() }, opts.doneLabel || 'Done')));
   const content = h('div', { class: 'sheet-body' }, body);
   sheetEl.append(head, content);
   sheetEl.classList.toggle('tall', !!opts.tall);
-  sheetEl.classList.toggle('with-keys', !!opts.keys);
   document.body.classList.add('sheet-open');
-  document.body.classList.toggle('sheet-keys', !!opts.keys);
   sheetClose = opts.onClose || null;
-  requestAnimationFrame(() => sheetEl.classList.add('on'));
+  sheetEl.classList.add('on');
+  $('.done', sheetEl).focus({ preventScroll: true });
   return content;
 }
 
 function closeSheet() {
+  if (sheetEl.inert) return;
+  sheetEl.inert = true;
+  view.inert = false;
+  tabsEl.inert = false;
   sheetEl.classList.remove('on');
-  document.body.classList.remove('sheet-open', 'sheet-keys');
-  const cb = sheetClose; sheetClose = null;
+  document.body.classList.remove('sheet-open');
+  const cb = sheetClose;
+  const returnFocus = sheetReturnFocus;
+  sheetClose = null;
+  sheetReturnFocus = null;
   if (cb) cb();
+  if (sheetEl.inert && returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
 }
 scrimEl.addEventListener('click', () => closeSheet());
 
@@ -407,23 +481,81 @@ function openVariables(storeMode) {
 
 function renderStatus() {
   const s = store.settings;
-  const parts = [];
-  if (shift) parts.push('<b class="st-shift">S</b>');
-  parts.push('<span>' + { deg: 'Deg', rad: 'Rad', gra: 'Gra' }[s.angle] + '</span>');
-  if (s.io === 'dec') parts.push('<span>Dec</span>');
-  if (s.format === 'fix') parts.push('<span>Fix' + s.digits + '</span>');
-  if (s.format === 'sci') parts.push('<span>Sci' + s.digits + '</span>');
-  if (s.complex !== 'off') parts.push('<span>' + (s.complex === 'polar' ? 'r∠θ' : 'a+bi') + '</span>');
-  statusEl.innerHTML = parts.join('');
+  const format = { norm1: 'Norm 1', norm2: 'Norm 2', fix: 'Fix ' + s.digits, sci: 'Sci ' + s.digits };
+  const parts = [
+    modifier ? h('b', { class: 'st-modifier ' + modifier }, modifier === 'shift' ? 'Shift' : 'Alpha') : null,
+    h('span', {}, { deg: 'Deg', rad: 'Rad', gra: 'Gra' }[s.angle]),
+    h('span', {}, format[s.format]),
+    s.io === 'dec' ? h('span', { title: 'Decimal output' }, 'Dec') : null,
+    h('span', { class: 'status-complex' }, { off: 'Real', polar: 'r∠θ', abi: 'a+bi' }[s.complex])
+  ];
+  statusEl.replaceChildren(...parts.filter(Boolean));
 }
 
-const APPS = [calculateApp, statisticsApp, distributionApp, spreadsheetApp, graphApp, geometryApp, recursionApp, conicsApp, graph3dApp, equationApp, matrixApp, vectorApp, basenApp, financialApp, physicsApp, periodicApp];
+const homeApp = (app, shortcut) => ({ app, id: app.id, title: app.title, shortcut, open: () => openApp(app) });
+const HOME_APPS = [
+  homeApp(calculateApp, '1'), homeApp(statisticsApp, '2'), homeApp(distributionApp, '3'), homeApp(spreadsheetApp, '4'),
+  homeApp(graphApp, '5'),
+  { id: 'dynamic', title: 'Dynamic Graph', shortcut: '6', open: () => openApp(graphApp, app => { app.showGraph(); app.openDynamic(); }) },
+  homeApp(conicsApp, '7'), homeApp(graph3dApp, '8'), homeApp(recursionApp, '9'), homeApp(equationApp, 'A'),
+  { id: 'inequality', title: 'Inequality', shortcut: 'B', open: () => openApp(equationApp, app => app.setMode('ineq')) },
+  { id: 'python', title: 'Python', shortcut: 'C' },
+  homeApp(geometryApp), homeApp(financialApp), homeApp(matrixApp), homeApp(vectorApp),
+  homeApp(basenApp), homeApp(physicsApp), homeApp(periodicApp), { id: 'exam', title: 'Exam Mode' }
+];
+const APPS = HOME_APPS.flatMap(item => item.app ? [item.app] : []);
+
+const CALCULATION_TABS = [calculateApp, vectorApp, matrixApp].map(app => ({
+  id: app.id, label: app === calculateApp ? 'Calculation' : app.title, open: () => openApp(app)
+}));
+
+function setTabs(tabs = [], selected = null) {
+  displayTabs = tabs;
+  activeTab = selected;
+  tabsEl.hidden = !tabs.length;
+  tabsEl.replaceChildren(...tabs.map(tab => h('button', {
+    type: 'button', 'aria-current': tab.id === selected ? 'page' : null,
+    onclick: () => { if (tab.id !== activeTab) tab.open(); }
+  }, tab.label)));
+  $('.key[data-id="prev-tab"]').disabled = tabs.length < 2;
+  $('.key[data-id="next-tab"]').disabled = tabs.length < 2;
+}
+
+function stepTab(offset) {
+  if (!displayTabs.length) return;
+  const index = displayTabs.findIndex(tab => tab.id === activeTab);
+  displayTabs[(index + offset + displayTabs.length) % displayTabs.length].open();
+}
+
+function goBack() {
+  if (!sheetEl.inert) { closeSheet(); return; }
+  if (current?.onBack?.()) return;
+  const back = $('.back', view);
+  if (back) { back.click(); return; }
+  showHome();
+}
+
+function openTools() {
+  const body = h('div', { class: 'formats' });
+  // Invoke the app's own controls so the menu and the on-screen toolbar stay in sync.
+  const actions = [...view.querySelectorAll('.toolbar button, .gbar button')].filter(button => !button.disabled && button.textContent.trim() && button.getClientRects().length);
+  for (const button of actions) {
+    body.append(h('button', { type: 'button', class: 'fmt-row', onclick: () => { closeSheet(); button.click(); } }, button.textContent.trim()));
+  }
+  if (!actions.length) {
+    for (const [label, action] of [['Catalog', openCatalog], ['Variables', () => openVariables(false)], ['Settings', openSettings]]) {
+      body.append(h('button', { type: 'button', class: 'fmt-row', onclick: () => { closeSheet(); action(); } }, label));
+    }
+  }
+  openSheet('Tools', body, { tall: true });
+}
 
 const ctx = {
   store, save, engine, parse, h, tex, makeField, numField, focusField, setField, insert, openSheet, closeSheet, seg,
   get field() { return field; },
   showKeypad(v) { document.body.classList.toggle('no-keys', !v); },
   setTitle(t) { titleEl.textContent = t; },
+  setTabs,
   angleFactor() { return ANGLE[store.settings.angle]; },
   valueLatex: (v, flags, mode, s) => valueLatex(v, flags, s || store.settings, mode, ANGLE[store.settings.angle]),
   press,
@@ -435,7 +567,9 @@ function cleanupFields() {
   for (const f of [...fields]) if (!document.contains(f)) fields.delete(f);
 }
 
-function openApp(app) {
+function openApp(app, afterMount) {
+  closeSheet();
+  setModifier(null);
   if (current && current.unmount) current.unmount();
   view.innerHTML = '';
   field = null;
@@ -443,7 +577,10 @@ function openApp(app) {
   document.body.classList.remove('home');
   ctx.showKeypad(true);
   titleEl.textContent = app.title;
+  setTabs();
   app.mount(view, ctx);
+  if (CALCULATION_TABS.some(tab => tab.id === app.id)) setTabs(CALCULATION_TABS, app.id);
+  afterMount?.(app);
   cleanupFields();
   try { sessionStorage.setItem('cg-app', app.id); } catch (e) {}
 }
@@ -464,8 +601,37 @@ const ICONS = {
   basen: '<svg viewBox="0 0 48 48"><text x="24" y="31" text-anchor="middle" font-size="17" font-weight="700" fill="#fff" stroke="none" font-family="-apple-system,system-ui,sans-serif">0x1F</text></svg>',
   financial: '<svg viewBox="0 0 48 48"><path d="M30 13c-2-3-12-4-12 5 0 6 0 10-4 17h20M13 26h14"/></svg>',
   physics: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="3" class="f"/><ellipse cx="24" cy="24" rx="16" ry="6.5" class="thin"/><ellipse cx="24" cy="24" rx="16" ry="6.5" transform="rotate(60 24 24)" class="thin"/><ellipse cx="24" cy="24" rx="16" ry="6.5" transform="rotate(-60 24 24)" class="thin"/></svg>',
+  dynamic: '<svg viewBox="0 0 48 48"><path d="M8 37h32M11 31c4-2 7-17 13-17s8 15 13 17M11 22c4-2 7-15 13-15s8 13 13 15" /><path d="M6 40h36" class="thin"/></svg>',
+  inequality: '<svg viewBox="0 0 48 48"><path d="m32 10-17 9 17 9M15 35h17"/></svg>',
+  python: '<svg viewBox="0 0 48 48"><path d="m17 15-9 9 9 9m14-18 9 9-9 9m-4-22-6 26"/></svg>',
+  exam: '<svg viewBox="0 0 48 48"><rect x="12" y="22" width="24" height="18" rx="3"/><path d="M17 21v-6a7 7 0 0 1 14 0v6m-7 8v5"/></svg>',
   periodic: '<svg viewBox="0 0 48 48"><rect x="11" y="10" width="26" height="28" rx="4"/><text x="24" y="31" text-anchor="middle" font-size="15" font-weight="700" fill="#fff" stroke="none" font-family="-apple-system,system-ui,sans-serif">Fe</text></svg>'
 };
+
+function markHomeTile(index, focus = false) {
+  homeIndex = index;
+  homeTiles.forEach((tile, i) => tile.classList.toggle('selected', i === index));
+  const tile = homeTiles[index];
+  if (focus) tile.focus({ preventScroll: true });
+  const row = tile.getBoundingClientRect();
+  const grid = tile.parentElement;
+  const bounds = grid.getBoundingClientRect();
+  if (row.top < bounds.top) grid.scrollTop -= bounds.top - row.top;
+  else if (row.bottom > bounds.bottom) grid.scrollTop += row.bottom - bounds.bottom;
+}
+
+function pressHomeKey(id, letter) {
+  const shortcut = letter || id;
+  const app = HOME_APPS.find(item => item.shortcut === shortcut);
+  if (app) { app.open?.(); return; }
+  if (id === 'exe' || id === 'ok') { homeTiles[homeIndex]?.click(); return; }
+
+  const offset = { up: -4, down: 4, left: -1, right: 1 }[id];
+  if (offset === undefined) return;
+  let target = homeIndex + offset;
+  while (homeTiles[target]?.disabled) target += offset;
+  if (homeTiles[target]) markHomeTile(target, true);
+}
 
 function showHome() {
   if (current && current.unmount) current.unmount();
@@ -473,24 +639,53 @@ function showHome() {
   field = null;
   view.innerHTML = '';
   document.body.classList.add('home');
-  ctx.showKeypad(false);
+  ctx.showKeypad(true);
+  setTabs();
   titleEl.textContent = 'Home';
-  const grid = h('div', { class: 'home-grid' });
-  for (const app of APPS) {
-    grid.append(h('button', { type: 'button', class: 'tile tile-' + app.id, onclick: () => openApp(app) },
-      h('span', { class: 'tile-icon', html: ICONS[app.id] }), h('span', { class: 'tile-name' }, app.title)));
-  }
-  view.append(grid);
+  homeTiles = HOME_APPS.map((app, index) => h('button', {
+    type: 'button', class: 'tile tile-' + app.id, disabled: !app.open,
+    'aria-label': app.open ? app.title : app.title + ' unavailable',
+    onfocus: () => markHomeTile(index),
+    onclick: () => { homeIndex = index; app.open(); }
+  },
+  app.shortcut ? h('kbd', { class: 'tile-shortcut', 'aria-hidden': 'true' }, app.shortcut) : null,
+  h('span', { class: 'tile-icon', 'aria-hidden': 'true', html: ICONS[app.id] }),
+  h('span', { class: 'tile-name' }, app.title)));
+  view.append(h('div', { class: 'home-grid' }, homeTiles));
+  markHomeTile(homeIndex);
+  cleanupFields();
   try { sessionStorage.removeItem('cg-app'); } catch (e) {}
 }
 
-homeBtn.addEventListener('click', () => { closeSheet(); showHome(); });
-$('#setBtn').addEventListener('click', () => openSettings());
-
 document.addEventListener('keydown', e => {
-  if (e.target && e.target.tagName === 'MATH-FIELD') return;
-  if (e.key === 'Escape') closeSheet();
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey) return;
+  if (e.key === 'Escape') { e.preventDefault(); goBack(); return; }
+  if (!sheetEl.inert && e.key === 'Tab') {
+    const focusable = [...sheetEl.querySelectorAll('button, input, select, textarea')].filter(el => !el.disabled && el.getClientRects().length);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey ? e.target === first : e.target === last) {
+      e.preventDefault();
+      (e.shiftKey ? last : first).focus();
+    }
+    return;
+  }
+  if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && sheetEl.inert && displayTabs.length) {
+    e.preventDefault();
+    stepTab(e.key === 'ArrowLeft' ? -1 : 1);
+    return;
+  }
+  if (e.altKey || current || !sheetEl.inert) return;
+  const direction = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[e.key];
+  if (direction) { e.preventDefault(); pressHomeKey(direction); }
+  else if (e.key.length === 1 && /^[1-9a-c]$/i.test(e.key)) { e.preventDefault(); pressHomeKey(e.key.toUpperCase()); }
+  else if (e.key === 'Enter' && !e.target.closest('button')) { e.preventDefault(); pressHomeKey('ok'); }
 });
+
+function renderConnection() { connectionEl.hidden = navigator.onLine; }
+window.addEventListener('online', renderConnection);
+window.addEventListener('offline', renderConnection);
+renderConnection();
 ['gesturestart', 'gesturechange', 'gestureend', 'dblclick'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
 document.addEventListener('touchmove', e => { if (e.touches.length > 1 && !e.target.closest('canvas')) e.preventDefault(); }, { passive: false });
 
