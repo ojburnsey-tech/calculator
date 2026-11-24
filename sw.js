@@ -1,9 +1,9 @@
-const CACHE = 'graph-calc-v6';
+const CACHE = 'graph-calc-v7';
 const FILES = [
-  './', './index.html', './app.css', './manifest.webmanifest',
+  './', './index.html', './app.css?v=7', './manifest.webmanifest',
   './icon-180.png', './icon-192.png', './icon-512.png',
   './vendor/math.js', './vendor/mathlive-static.css', './vendor/mathlive.min.mjs',
-  './js/main.js', './js/parse.js', './js/engine.js', './js/exact.js',
+  './js/main.js?v=7', './js/parse.js', './js/engine.js', './js/exact.js',
   './js/stats.js', './js/data.js', './js/plot.js',
   './js/apps/calculate.js', './js/apps/equation.js', './js/apps/distribution.js',
   './js/apps/statistics.js', './js/apps/graph.js', './js/apps/matrix.js',
@@ -41,7 +41,11 @@ self.addEventListener('fetch', event => {
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
-    const cached = await cache.match(request, { ignoreSearch: true });
+    const cached = await cache.match(request);
+    if (!cached && request.mode === 'navigate') {
+      const shell = await cache.match('./index.html');
+      if (shell) return shell;
+    }
     if (cached) return cached;
 
     try {

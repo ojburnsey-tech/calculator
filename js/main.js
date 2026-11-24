@@ -739,5 +739,33 @@ showHome();
 if (last) ctx.openAppById(last);
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  const serviceWorker = navigator.serviceWorker;
+  let controller = serviceWorker.controller;
+  let reloadPending = false;
+  let reloading = false;
+
+  function reloadUpdatedApp() {
+    if (!reloadPending || reloading || document.visibilityState !== 'visible') return;
+    reloading = true;
+    save();
+    flushSave();
+    location.reload();
+  }
+
+  serviceWorker.addEventListener('controllerchange', () => {
+    const previous = controller;
+    controller = serviceWorker.controller;
+    if (previous && controller && previous !== controller) reloadPending = true;
+    reloadUpdatedApp();
+  });
+
+  const registration = serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => null);
+  const checkForUpdate = () => {
+    reloadUpdatedApp();
+    if (reloading || document.visibilityState !== 'visible' || !navigator.onLine) return;
+    registration.then(reg => reg?.update()).catch(() => {});
+  };
+  document.addEventListener('visibilitychange', checkForUpdate);
+  window.addEventListener('pageshow', event => { if (event.persisted) checkForUpdate(); });
+  window.addEventListener('online', checkForUpdate);
 }
