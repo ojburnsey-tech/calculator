@@ -31,11 +31,13 @@ export const calculateApp = {
     this.ctx = ctx;
     const { h } = ctx;
     if (!ctx.store.history) ctx.store.history = [];
+    this.clearArmed = false;
     this.replayIndex = null;
     this.replayDraft = '';
     this.hist = h('div', { class: 'hist scroll' });
     this.err = h('div', { class: 'err', role: 'alert' });
     this.mf = ctx.makeField(ctx.store.calcDraft || '', { class: 'calc-input', onInput: v => {
+      this.clearArmed = false;
       this.err.textContent = '';
       this.err.classList.remove('on');
       this.replayIndex = null;
@@ -76,6 +78,7 @@ export const calculateApp = {
     requestAnimationFrame(() => { this.hist.scrollTop = this.hist.scrollHeight; });
   },
   loadDraft(latex) {
+    this.clearArmed = false;
     this.mf.value = latex;
     this.ctx.store.calcDraft = latex;
     this.ctx.focusField(this.mf);
@@ -92,8 +95,26 @@ export const calculateApp = {
   beforeOperator() {
     if (this.ctx.field === this.mf && !this.mf.value.trim() && this.ctx.store.history.length) this.ctx.insert('\\mathrm{Ans}');
   },
-  onAC() { this.err.textContent = ''; this.err.classList.remove('on'); this.ctx.store.calcDraft = ''; },
+  clearCalculation() {
+    const { store } = this.ctx;
+    const clearHistory = this.clearArmed;
+    this.mf.value = '';
+    this.err.textContent = '';
+    this.err.classList.remove('on');
+    this.replayIndex = null;
+    this.replayDraft = '';
+    store.calcDraft = '';
+
+    // Require a second press before deleting the saved calculation history.
+    this.clearArmed = !clearHistory;
+    if (clearHistory) {
+      store.history.length = 0;
+      this.render();
+    }
+    this.ctx.save();
+  },
   onExe() {
+    this.clearArmed = false;
     const { store, engine } = this.ctx;
     const latex = this.mf.value.trim();
     if (!latex) return;
@@ -116,8 +137,10 @@ export const calculateApp = {
       this.err.classList.add('on');
     }
   },
-  onSettings() { this.render(); },
+  onSettings() { this.clearArmed = false; this.render(); },
   onKey(id) {
+    if (id === 'ac') { this.clearCalculation(); return true; }
+    this.clearArmed = false;
     const { store } = this.ctx;
     if (id === 'up' || id === 'down') { this.replay(id === 'up' ? -1 : 1); return true; }
     const last = store.history[store.history.length - 1];
