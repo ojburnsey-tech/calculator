@@ -4,18 +4,9 @@ import * as parse from './parse.js';
 import { valueLatex } from './exact.js';
 import { calculateApp } from './apps/calculate.js';
 import { equationApp } from './apps/equation.js';
-import { distributionApp } from './apps/distribution.js';
-import { statisticsApp } from './apps/statistics.js';
 import { graphApp } from './apps/graph.js';
 import { matrixApp, vectorApp } from './apps/matrix.js';
-import { basenApp } from './apps/basen.js';
 import { physicsApp, periodicApp, constantsList, converterPanel, latexNumber } from './apps/physics.js';
-import { recursionApp } from './apps/recursion.js';
-import { conicsApp } from './apps/conics.js';
-import { graph3dApp } from './apps/graph3d.js';
-import { financialApp } from './apps/financial.js';
-import { spreadsheetApp } from './apps/spreadsheet.js';
-import { geometryApp } from './apps/geometry.js';
 
 MathfieldElement.fontsDirectory = './fonts';
 MathfieldElement.soundsDirectory = null;
@@ -41,7 +32,22 @@ function loadStore() {
 }
 
 const store = loadStore();
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} };
+let saveTimer;
+function flushSave() {
+  if (saveTimer === undefined) return;
+  clearTimeout(saveTimer);
+  saveTimer = undefined;
+  try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {}
+}
+
+// Coalesce writes while typing and commit pending work before iOS suspends the app.
+function save() {
+  if (saveTimer === undefined) saveTimer = setTimeout(flushSave, 120);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushSave();
+});
+window.addEventListener('pagehide', flushSave);
 const engine = new Engine(store);
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -78,7 +84,7 @@ let activeTab = null;
 let homeTiles = [];
 let homeIndex = 0;
 let current = null;
-const fields = new Set();
+let navigation = 0;
 
 function makeField(value = '', opts = {}) {
   const mf = new MathfieldElement();
@@ -103,12 +109,12 @@ function makeField(value = '', opts = {}) {
     if (e.key === 'Enter') { e.preventDefault(); press('exe'); }
   });
   mf.addEventListener('input', () => { if (opts.onInput) opts.onInput(mf.value); });
-  fields.add(mf);
   return mf;
 }
 
 function setField(mf) {
   const fresh = field !== mf;
+  if (fresh) lastJump = null;
   if (field && fresh) { field.classList.remove('active'); clearReplace(field); }
   field = mf;
   if (fresh && mf && /\bcell\b/.test(mf.className) && mf.value) { mf._replace = true; mf.classList.add('replace'); }
@@ -213,7 +219,12 @@ function buildKeypad() {
       if (k.s || k.a) b.append(h('span', { class: 'legends', 'aria-hidden': 'true' },
         h('span', { class: 'sl', html: k.s?.label || '' }), h('span', { class: 'al' }, k.a)));
       b.append(h('span', { class: 'ml', html: k.label }));
-      b.addEventListener('pointerdown', e => { e.preventDefault(); b.classList.add('pressed'); });
+      b.addEventListener('pointerdown', e => {
+        if (!e.isPrimary || e.button !== 0) return;
+        // Keep the expression cursor in place while the on-screen keypad is used.
+        e.preventDefault();
+        b.classList.add('pressed');
+      });
       const up = () => b.classList.remove('pressed');
       b.addEventListener('pointerup', up);
       b.addEventListener('pointercancel', up);
@@ -492,18 +503,40 @@ function renderStatus() {
   statusEl.replaceChildren(...parts.filter(Boolean));
 }
 
-const homeApp = (app, shortcut) => ({ app, id: app.id, title: app.title, shortcut, open: () => openApp(app) });
+const homeApp = (app, shortcut) => ({ id: app.id, title: app.title, shortcut, open: () => openApp(app) });
+function lazyApp(id, title, load, shortcut) {
+  let loaded;
+  return { id, title, shortcut, async open() {
+    const request = ++navigation;
+    try {
+      loaded ??= await load();
+      if (request === navigation) openApp(loaded);
+    } catch {
+      if (request === navigation) toast('Could not open ' + title + '. Try again.');
+    }
+  } };
+}
+
 const HOME_APPS = [
-  homeApp(calculateApp, '1'), homeApp(statisticsApp, '2'), homeApp(distributionApp, '3'), homeApp(spreadsheetApp, '4'),
+  homeApp(calculateApp, '1'),
+  lazyApp('statistics', 'Statistics', () => import('./apps/statistics.js').then(module => module.statisticsApp), '2'),
+  lazyApp('distribution', 'Distribution', () => import('./apps/distribution.js').then(module => module.distributionApp), '3'),
+  lazyApp('spreadsheet', 'Spreadsheet', () => import('./apps/spreadsheet.js').then(module => module.spreadsheetApp), '4'),
   homeApp(graphApp, '5'),
   { id: 'dynamic', title: 'Dynamic Graph', shortcut: '6', open: () => openApp(graphApp, app => { app.showGraph(); app.openDynamic(); }) },
-  homeApp(conicsApp, '7'), homeApp(graph3dApp, '8'), homeApp(recursionApp, '9'), homeApp(equationApp, 'A'),
+  lazyApp('conics', 'Conics', () => import('./apps/conics.js').then(module => module.conicsApp), '7'),
+  lazyApp('graph3d', '3D Graph', () => import('./apps/graph3d.js').then(module => module.graph3dApp), '8'),
+  lazyApp('recursion', 'Recursion', () => import('./apps/recursion.js').then(module => module.recursionApp), '9'),
+  homeApp(equationApp, 'A'),
   { id: 'inequality', title: 'Inequality', shortcut: 'B', open: () => openApp(equationApp, app => app.setMode('ineq')) },
   { id: 'python', title: 'Python', shortcut: 'C' },
-  homeApp(geometryApp), homeApp(financialApp), homeApp(matrixApp), homeApp(vectorApp),
-  homeApp(basenApp), homeApp(physicsApp), homeApp(periodicApp), { id: 'exam', title: 'Exam Mode' }
+  lazyApp('geometry', 'Geometry', () => import('./apps/geometry.js').then(module => module.geometryApp)),
+  lazyApp('financial', 'Financial', () => import('./apps/financial.js').then(module => module.financialApp)),
+  homeApp(matrixApp), homeApp(vectorApp),
+  lazyApp('basen', 'Base-N', () => import('./apps/basen.js').then(module => module.basenApp)),
+  homeApp(physicsApp), homeApp(periodicApp), { id: 'exam', title: 'Exam Mode' }
 ];
-const APPS = HOME_APPS.flatMap(item => item.app ? [item.app] : []);
+
 
 const CALCULATION_TABS = [calculateApp, vectorApp, matrixApp].map(app => ({
   id: app.id, label: app === calculateApp ? 'Calculation' : app.title, open: () => openApp(app)
@@ -560,19 +593,16 @@ const ctx = {
   valueLatex: (v, flags, mode, s) => valueLatex(v, flags, s || store.settings, mode, ANGLE[store.settings.angle]),
   press,
   toast,
-  openAppById(id) { const a = APPS.find(x => x.id === id); if (a) openApp(a); }
+  openAppById(id) { HOME_APPS.find(app => app.id === id)?.open?.(); }
 };
 
-function cleanupFields() {
-  for (const f of [...fields]) if (!document.contains(f)) fields.delete(f);
-}
-
 function openApp(app, afterMount) {
+  navigation++;
   closeSheet();
   setModifier(null);
   if (current && current.unmount) current.unmount();
   view.innerHTML = '';
-  field = null;
+  setField(null);
   current = app;
   document.body.classList.remove('home');
   ctx.showKeypad(true);
@@ -581,7 +611,6 @@ function openApp(app, afterMount) {
   app.mount(view, ctx);
   if (CALCULATION_TABS.some(tab => tab.id === app.id)) setTabs(CALCULATION_TABS, app.id);
   afterMount?.(app);
-  cleanupFields();
   try { sessionStorage.setItem('cg-app', app.id); } catch (e) {}
 }
 
@@ -634,9 +663,10 @@ function pressHomeKey(id, letter) {
 }
 
 function showHome() {
+  navigation++;
   if (current && current.unmount) current.unmount();
   current = null;
-  field = null;
+  setField(null);
   view.innerHTML = '';
   document.body.classList.add('home');
   ctx.showKeypad(true);
@@ -653,7 +683,6 @@ function showHome() {
   h('span', { class: 'tile-name' }, app.title)));
   view.append(h('div', { class: 'home-grid' }, homeTiles));
   markHomeTile(homeIndex);
-  cleanupFields();
   try { sessionStorage.removeItem('cg-app'); } catch (e) {}
 }
 
@@ -686,15 +715,13 @@ function renderConnection() { connectionEl.hidden = navigator.onLine; }
 window.addEventListener('online', renderConnection);
 window.addEventListener('offline', renderConnection);
 renderConnection();
-['gesturestart', 'gesturechange', 'gestureend', 'dblclick'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
-document.addEventListener('touchmove', e => { if (e.touches.length > 1 && !e.target.closest('canvas')) e.preventDefault(); }, { passive: false });
 
 buildKeypad();
 renderStatus();
 await customElements.whenDefined('math-field');
 const last = (() => { try { return sessionStorage.getItem('cg-app'); } catch (e) { return null; } })();
-const lastApp = APPS.find(a => a.id === last);
-if (lastApp) openApp(lastApp); else showHome();
+showHome();
+if (last) ctx.openAppById(last);
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});

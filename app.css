@@ -253,9 +253,14 @@ h1, h2, p { margin: 0; }
   box-shadow: inset 0 1px 0 #ffffffb3, 0 2px 0 #8291ac, 0 3px 2px #0b10294d;
   font-weight: 680;
   font-variant-numeric: tabular-nums;
-  transition: transform .08s ease-out, filter .08s;
+  transition: transform 130ms ease-out, filter 130ms ease-out;
 }
-.deck .key.pressed { transform: translateY(2px); filter: brightness(.93); box-shadow: none; }
+.deck .key.pressed, .deck .key:active:not(:disabled) {
+  transform: translateY(2px);
+  filter: brightness(.9);
+  box-shadow: none;
+  transition-duration: 0ms;
+}
 .deck .key:focus-visible { outline-color: var(--shift); }
 .deck .key:disabled { opacity: .48; box-shadow: none; }
 .deck .key .ml { display: inline-flex; align-items: center; gap: 1px; white-space: nowrap; line-height: 1; }
@@ -666,3 +671,22 @@ math-field:focus-within{outline:none}
 .cat-grid.two{grid-template-columns:1fr 1fr}
 .eq-top .seg button{font-size:12px;padding:7px 3px}
 .cell.replace{background:color-mix(in srgb,var(--tint) 14%,var(--card))}
+
+/* Home Screen mode uses the safe-area padding on the chassis itself. */
+@media (display-mode: standalone) {
+  html { background: var(--chassis); overscroll-behavior: none; }
+}
+.deck {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+@media (pointer: coarse) and (max-width: 550px) and (min-height: 740px) {
+  .command-cluster .key { height: 42px; }
+  .direction-pad { grid-template-rows: repeat(3, 25px); }
+  .direction-pad .key { height: 25px; }
+  .modifier-keys .key { height: 36px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .deck .key { transition: none; }
+}
