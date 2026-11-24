@@ -207,6 +207,7 @@ const BASIC = {
   add: '+', sub: '-', mul: '\\times', div: '\\div', exp10: '\\times10^{#?}', ans: '\\mathrm{Ans}'
 };
 const OPERATOR_KEYS = new Set(['add', 'sub', 'mul', 'div', 'sq', 'pow']);
+const modifierLabels = [];
 
 function buildKeypad() {
   const group = (keys, cls) => {
@@ -216,9 +217,13 @@ function buildKeypad() {
         class: 'key ' + (k.cls || ''), 'data-id': k.id, type: 'button', 'aria-label': k.name,
         'aria-pressed': ['shift', 'alpha'].includes(k.id) ? 'false' : null
       });
-      if (k.s || k.a) b.append(h('span', { class: 'legends', 'aria-hidden': 'true' },
-        h('span', { class: 'sl', html: k.s?.label || '' }), h('span', { class: 'al' }, k.a)));
-      b.append(h('span', { class: 'ml', html: k.label }));
+      const label = h('span', { class: 'ml', html: k.label });
+      if (k.s || k.a) {
+        b.append(h('span', { class: 'legends', 'aria-hidden': 'true' },
+          h('span', { class: 'sl', html: k.s?.label || '' }), h('span', { class: 'al' }, k.a)));
+        modifierLabels.push({ key: k, button: b, label });
+      }
+      b.append(label);
       b.addEventListener('pointerdown', e => {
         if (!e.isPrimary || e.button !== 0) return;
         // Keep the expression cursor in place while the on-screen keypad is used.
@@ -247,9 +252,19 @@ function buildKeypad() {
 }
 
 function setModifier(next) {
+  if (next === modifier) return;
   modifier = next;
   document.body.classList.toggle('shifted', next === 'shift');
   document.body.classList.toggle('alpha-on', next === 'alpha');
+  for (const { key, button, label } of modifierLabels) {
+    const alternate = next === 'shift' ? key.s?.label : next === 'alpha' ? key.a : undefined;
+    label.innerHTML = alternate ?? key.label;
+    button.classList.toggle('modifier-label', alternate !== undefined);
+    if (key.name) {
+      if (alternate !== undefined) button.removeAttribute('aria-label');
+      else button.setAttribute('aria-label', key.name);
+    }
+  }
   for (const id of ['shift', 'alpha']) {
     const button = $('.key[data-id="' + id + '"]');
     if (button) button.setAttribute('aria-pressed', String(next === id));
