@@ -102,8 +102,10 @@ function makeField(value = '', opts = {}) {
 }
 
 function setField(mf) {
-  if (field && field !== mf) field.classList.remove('active');
+  const fresh = field !== mf;
+  if (field && fresh) { field.classList.remove('active'); clearReplace(field); }
   field = mf;
+  if (fresh && mf && /\bcell\b/.test(mf.className) && mf.value) { mf._replace = true; mf.classList.add('replace'); }
   if (mf) mf.classList.add('active');
 }
 
@@ -112,8 +114,11 @@ function focusField(mf) {
   if (mf) { try { mf.focus({ preventScroll: true }); } catch (e) { mf.focus(); } }
 }
 
+function clearReplace(mf) { if (mf && mf._replace) { mf._replace = false; mf.classList.remove('replace'); } }
+
 function insert(latex) {
   if (!field) return;
+  if (field._replace) { field.value = ''; clearReplace(field); }
   if (document.activeElement !== field) focusField(field);
   field.executeCommand(['insert', latex, { insertionMode: 'replaceSelection', selectionMode: 'placeholder', format: 'latex' }]);
 }
@@ -213,6 +218,7 @@ function press(id, k) {
     return;
   }
   if (current && current.onKey && current.onKey(id)) return;
+  if (['del', 'left', 'right', 'exe', 'ac'].includes(id)) clearReplace(field);
   switch (id) {
     case 'del': if (field) field.executeCommand('deleteBackward'); return;
     case 'ac': if (field) { field.value = ''; field.dispatchEvent(new Event('input')); } if (current && current.onAC) current.onAC(); return;

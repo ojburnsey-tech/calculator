@@ -63,7 +63,7 @@ export const graph3dApp = {
       } catch (e) {}
     });
     this.cv = h('canvas', { class: 'gcanvas', 'aria-label': '3D graph. Drag to rotate, pinch to zoom.' });
-    const info = h('div', { class: 'sg-info' }, 'Drag to rotate · pinch to zoom');
+    const info = h('div', { class: 'sg-info' }, 'Drag to rotate · pinch to zoom · angles in radians');
     const bar = h('div', { class: 'gbar' },
       h('button', { type: 'button', onclick: () => this.showEdit() }, 'Edit'),
       h('button', { type: 'button', onclick: () => { Object.assign(st, { yaw: -0.7, pitch: 0.55, zoom: 1 }); this.draw(); } }, 'Reset view'),
@@ -80,6 +80,12 @@ export const graph3dApp = {
     const st = this.ctx.store.g3;
     const N = 34, R = st.range, Z = st.zmax;
     this.quads = [];
+    const settings = this.ctx.store.settings;
+    const saved = settings.angle;
+    settings.angle = 'rad';
+    try { this.buildMesh(N, R, Z); } finally { settings.angle = saved; }
+  },
+  buildMesh(N, R, Z) {
     for (const fn of this.fns) {
       const P = [];
       for (let i = 0; i <= N; i++) {

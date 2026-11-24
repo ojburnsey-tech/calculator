@@ -138,7 +138,9 @@ const SCREENS = [
         cum += cf[k] / Math.pow(1 + i, k);
         if (k > 0 && prev < 0 && cum >= 0) { pbp = k - 1 + (-prev) / (cum - prev); break; }
       }
-      return [['NPV', N], ['NFV', N * Math.pow(1 + i, cf.length - 1)], ['IRR (%)', irr(cf)], ['PBP', pbp]];
+      let r = NaN;
+      try { r = irr(cf); } catch (e) { r = NaN; }
+      return [['NPV', N], ['NFV', N * Math.pow(1 + i, cf.length - 1)], ['IRR (%)', r], ['PBP', pbp]];
     } },
   { id: 'amort', name: 'Amortisation', fields: [['PM1', 'PM1', 1], ['PM2', 'PM2', 12], ['n', 'n', 240], ['I', 'I%', 5], ['PV', 'PV', 100000], ['PMT', 'PMT', -659.96], ['FV', 'FV', 0], ['PY', 'P/Y', 12], ['CY', 'C/Y', 12]],
     run: (p) => {

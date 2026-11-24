@@ -311,7 +311,7 @@ math-field:focus-within{outline:none}
 .grid-table.xsheet th{text-align:center}
 .geo-tools{border-bottom:.5px solid var(--sep)}
 .geo-tools button{padding:7px 11px;font-size:13px}
-.geo-meas{flex:0 0 auto!important;max-height:22%;padding:0 12px}
+.geo-meas{flex:0 0 auto!important;height:104px;padding:0 12px}
 .geo-meas .res-row{min-height:32px;padding:5px 4px;font-size:14px}
 .res-row.small{font-size:12px!important;color:var(--label2)}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 90px);transform:translate(-50%,12px);padding:10px 16px;border-radius:999px;background:var(--label);color:var(--bg);font-weight:600;font-size:14px;opacity:0;transition:opacity .2s,transform .25s cubic-bezier(.2,.9,.25,1);z-index:40;pointer-events:none}
@@ -322,3 +322,4 @@ math-field:focus-within{outline:none}
 .home .tile-icon svg{width:36px;height:36px}
 .tile-name{font-size:11.5px}
 .eq-top .seg button{font-size:12px;padding:7px 3px}
+.cell.replace{background:color-mix(in srgb,var(--tint) 14%,var(--card))}

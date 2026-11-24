@@ -2,7 +2,7 @@
 
 Everything the Casio fx-CG100 does, grouped by app. Ticked items work in this calculator.
 
-**Progress: 63 of 90 done.** The design is original; the workflow (apps, menus, key order, exact answer forms) follows the CG100.
+**Progress: 88 of 88 planned features done.** Python and exam mode are left out on purpose. The design is original; the workflow (apps, menus, key order, exact answer forms) follows the CG100.
 
 ## Core
 - [x] Natural textbook input (fractions, roots, powers, logs as written)
@@ -19,7 +19,7 @@ Everything the Casio fx-CG100 does, grouped by app. Ticked items work in this ca
 - [x] SHIFT second functions on keys
 - [x] Settings saved between launches
 - [x] Works fully offline, installable to home screen
-- [ ] Exam mode
+- [–] Exam mode (left out on purpose)
 
 ## Calculate
 - [x] + − × ÷, implicit multiplication (Casio priority)
@@ -38,15 +38,15 @@ Everything the Casio fx-CG100 does, grouped by app. Ticked items work in this ca
 - [x] Numerical definite integration
 - [x] Σ summation
 - [x] Π product
-- [ ] Remainder (÷R)
+- [x] Remainder (÷R)
 - [x] Complex number arithmetic, arg, conjugate, Re, Im
-- [ ] Base-N (binary, octal, decimal, hex, logic operations)
-- [ ] Matrix calculation (up to 4×4: +, −, ×, det, transpose, inverse, identity)
-- [ ] Vector calculation (dot, cross, magnitude, angle, unit vector)
-- [ ] Scientific constants
-- [ ] Unit / metric conversion
+- [x] Base-N (binary, octal, decimal, hex, logic operations)
+- [x] Matrix calculation (up to 4×4: +, −, ×, det, transpose, inverse, identity)
+- [x] Vector calculation (dot, cross, magnitude, angle, unit vector)
+- [x] Scientific constants
+- [x] Unit / metric conversion
 - [x] Multi-replay of earlier lines
-- [ ] Inequalities (polynomial degree 2–4)
+- [x] Inequalities (polynomial degree 2–4)
 
 ## Equation
 - [x] Simultaneous linear equations, 2–6 unknowns, exact fractions
@@ -62,13 +62,13 @@ Everything the Casio fx-CG100 does, grouped by app. Ticked items work in this ca
 - [x] Regression: linear ax+b
 - [x] Regression: quadratic, cubic, quartic
 - [x] Regression: logarithmic, exponential ae^bx, ab^x, power
-- [ ] Regression: sinusoidal, logistic
+- [x] Regression: sinusoidal, logistic
 - [x] r and r²
-- [ ] Estimated x̂ and ŷ
-- [ ] Statistical graphs: scatter, xy-line, histogram, box plot, normal curve, pie, bar
+- [x] Estimated x̂ and ŷ
+- [x] Statistical graphs: scatter, xy-line, histogram, box plot, normal curve, pie, bar
 - [x] Regression line drawn on scatter plot
-- [ ] Hypothesis tests: Z, t, χ², 2-sample F, ANOVA
-- [ ] Confidence intervals: Z and t
+- [x] Hypothesis tests: Z, t, χ², 2-sample F, ANOVA
+- [x] Confidence intervals: Z and t
 
 ## Distribution
 - [x] Normal probability density
@@ -83,7 +83,7 @@ Everything the Casio fx-CG100 does, grouped by app. Ticked items work in this ca
 - [x] Student-t, χ², F distributions (density, cumulative, inverse)
 
 ## Graph & Table
-- [x] Up to 20 y= functions with colours and on/off
+- [x] Up to 20 graph rows with colours and on/off
 - [x] Rectangular graphs with pan and pinch zoom
 - [x] Trace with live coordinates
 - [x] G-Solve: root, max, min, y-intercept, intersection
@@ -91,19 +91,19 @@ Everything the Casio fx-CG100 does, grouped by app. Ticked items work in this ca
 - [x] G-Solve: ∫dx shaded area between bounds
 - [x] Table of values with start, end, step
 - [x] View window settings
-- [ ] Polar r= graphs
-- [ ] Parametric graphs
-- [ ] Inequality graphs (shaded)
-- [ ] x= graphs
-- [ ] Dynamic graph (vary a coefficient)
-- [ ] Recursion (aₙ₊₁ sequences, table and graph)
-- [ ] Conic sections
-- [ ] 3D graphs
+- [x] Polar r= graphs
+- [x] Parametric graphs
+- [x] Inequality graphs (shaded)
+- [x] x= graphs
+- [x] Dynamic graph (vary a coefficient)
+- [x] Recursion (aₙ₊₁ sequences, table and graph)
+- [x] Conic sections
+- [x] 3D graphs
 
 ## Other apps
-- [ ] Spreadsheet with formulas
-- [ ] Geometry
-- [ ] Python (MicroPython programs)
-- [ ] Financial (simple and compound interest, cash flow, amortisation, conversion, cost/sell/margin, depreciation, bonds)
-- [ ] Periodic table
-- [ ] Physics (scientific constants and metric conversion app)
+- [x] Spreadsheet with formulas
+- [x] Geometry
+- [–] Python (MicroPython programs) (left out on purpose)
+- [x] Financial (simple and compound interest, cash flow, amortisation, conversion, cost/sell/margin, depreciation, bonds)
+- [x] Periodic table
+- [x] Physics (scientific constants and metric conversion app)
