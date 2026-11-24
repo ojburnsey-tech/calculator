@@ -1,4 +1,4 @@
-const CACHE = 'graph-calc-v3';
+const CACHE = 'graph-calc-v4';
 const FILES = [
   './', './index.html', './app.css', './manifest.webmanifest',
   './icon-180.png', './icon-192.png', './icon-512.png',
