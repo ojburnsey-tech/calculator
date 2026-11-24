@@ -280,8 +280,6 @@ h1, h2, p { margin: 0; }
 .deck .key[data-id="shift"] { background: var(--shift); box-shadow: inset 0 1px 0 #f1fffac7, 0 2px 0 #558c82; }
 .deck .key[data-id="alpha"] { background: var(--alpha); box-shadow: inset 0 1px 0 #fff5db, 0 2px 0 #a8774c; }
 .deck .key[aria-pressed="true"] { outline: 2px solid #f5f8ff; outline-offset: -3px; }
-.shifted .deck .legends .sl, .alpha-on .deck .legends .al { font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
-.shifted .deck .key:has(.sl:not(:empty)) .ml, .alpha-on .deck .key:has(.al:not(:empty)) .ml { opacity: .54; }
 .command-cluster .key {
   height: clamp(30px, 4.2dvh, 36px);
   border: 1px solid #596b92;
@@ -313,6 +311,11 @@ h1, h2, p { margin: 0; }
 .number-keys .key.exe { background: #718af0; border-color: #9baef7; color: #111b41; }
 .number-keys .key.exe, .number-keys .key.ac, .number-keys .key.del, .number-keys .key.small { font-size: 12px; }
 .number-keys .key[data-id="exp10"] { font-size: 15px; }
+.deck .key.modifier-label .legends { display: none; }
+.deck .key.modifier-label .ml { margin-top: 0; }
+.shifted .deck .key.modifier-label .ml { color: #16614f; }
+.alpha-on .deck .key.modifier-label .ml { color: #7a461b; }
+.shifted .deck .controls .key.modifier-label .ml { color: var(--shift); }
 
 /* Base-N has its own keypad and token editor inside the display. */
 .bn-pad .grid { display: grid; gap: 5px; }
